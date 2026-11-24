@@ -2442,6 +2442,17 @@ public class GameAction {
                 }
             }
         }
+        // Grimoire: simulations can force who starts, so batches are balanced and games stay independent.
+        final int forced = game.getRules().getForcedStartingPlayer();
+        if (forced >= 0 && game.getMatch() != null && forced < game.getMatch().getPlayers().size()) {
+            final RegisteredPlayer wanted = game.getMatch().getPlayers().get(forced);
+            for (Player p : game.getPlayers()) {
+                if (p.getRegisteredPlayer() == wanted) {
+                    return p;
+                }
+            }
+        }
+
         // Power Play - Each player with a Power Play in the CommandZone becomes the Starting Player
         Set<Player> powerPlayers = Sets.newHashSet();
         for (Card c : game.getCardsIn(ZoneType.Command)) {

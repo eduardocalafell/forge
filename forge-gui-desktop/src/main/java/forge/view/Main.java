@@ -62,7 +62,8 @@ public final class Main {
             System.err.flush();
         });
 
-        Sentry.init(options -> {
+        // Grimoire: o worker de simulação não envia relatórios para fora (nem inicializa o Sentry).
+        if (!"grimoire".equals(mode)) Sentry.init(options -> {
             options.setEnableExternalConfiguration(true);
             options.setRelease(BuildInfo.getVersionString());
             options.setEnvironment(System.getProperty("os.name"));
@@ -104,6 +105,10 @@ public final class Main {
                 SimulateMatch.simulate(args);
                 break;
 
+            case "grimoire":
+                GrimoireSim.main(args);
+                break;
+
             case "parse":
                 CardReaderExperiments.parseAllCards(args);
                 break;
@@ -127,7 +132,7 @@ public final class Main {
      * not a mode and only prints usage, so it is deliberately not listed here.
      */
     public static boolean isCommandLineMode(final String mode) {
-        return "sim".equals(mode) || "parse".equals(mode) || "server".equals(mode);
+        return "sim".equals(mode) || "parse".equals(mode) || "server".equals(mode) || "grimoire".equals(mode);
     }
 
     @SuppressWarnings("deprecation")

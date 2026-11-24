@@ -18,6 +18,8 @@ public class GameRules {
     private boolean allowCheatShuffle = false;
     private final Set<GameType> appliedVariants = EnumSet.noneOf(GameType.class);
     private int simTimeout = 120;
+    /** Grimoire: index (in the match's registered players) of who takes the first turn; -1 keeps the coin toss. */
+    private int forcedStartingPlayer = -1;
 
     // it's a preference, not rule... but I could hardly find a better place for it
     private boolean useGrayText;
@@ -153,5 +155,14 @@ public class GameRules {
 
     public void setSimTimeout(final int duration) {
         this.simTimeout = duration;
+    }
+
+    public int getForcedStartingPlayer() {
+        return forcedStartingPlayer;
+    }
+
+    /** Forces who takes the first turn (index in {@link Match#getPlayers()}); -1 restores the coin toss. */
+    public void setForcedStartingPlayer(final int index) {
+        this.forcedStartingPlayer = index;
     }
 }
