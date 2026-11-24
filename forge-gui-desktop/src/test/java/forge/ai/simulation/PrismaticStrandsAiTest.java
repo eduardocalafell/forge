@@ -272,6 +272,17 @@ public class PrismaticStrandsAiTest extends FlatMcTestBase {
         assertTrue(hand.castCost < costAfterBlocks);
     }
 
+    // a heurística v1 tira a carta do filtro AI:RemoveDeck:All; a baseline mantém o comportamento original
+    @Test
+    public void dedicatedLogicPutsTheCardBackInThePlayList() {
+        final Card c = put("Prismatic Strands", ai, ZoneType.Hand);
+        assertTrue(forge.ai.ComputerUtilCard.isCardRemAIDeck(c), "o script mantém a dica AI:RemoveDeck:All");
+        assertTrue(PrismaticStrandsAi.handlesHost(c));
+        System.setProperty("grimoire.ai.prismaticStrands", "baseline");
+        assertFalse(PrismaticStrandsAi.handlesHost(c));
+        assertFalse(PrismaticStrandsAi.handlesHost(put("Lightning Bolt", ai, ZoneType.Hand)));
+    }
+
     // trace -----------------------------------------------------------------------------------------
     @Test
     public void traceComesFromTheRealDecision() {

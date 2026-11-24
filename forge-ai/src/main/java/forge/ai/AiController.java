@@ -2396,7 +2396,7 @@ public class AiController {
                 return true;
             }
             final Card h = spellAbility.getHostCard();
-            return h != null && ((ComputerUtilCard.isCardRemAIDeck(h) && !flatMc
+            return h != null && ((ComputerUtilCard.isCardRemAIDeck(h) && !flatMc && !PrismaticStrandsAi.handlesHost(h)
                     && !("Scapeshift".equals(h.getName()) && RampPlan.valakutAccessible(player) && RampPlan.scapeshiftLethal(player)))
                     || ("Scapeshift".equals(h.getName()) && RampPlan.scapeshiftMustWait(player))
                     || (ComboAssembly.deadOnArrival(player, spellAbility) && vetoed(spellAbility, "dead-on-arrival"))
@@ -3078,7 +3078,7 @@ public class AiController {
      */
     public boolean isFlatMcOnlyPlay(final SpellAbility sa) {
         final Card h = sa == null ? null : sa.getHostCard();
-        return h != null && ComputerUtilCard.isCardRemAIDeck(h) && flatMonteCarloActive()
+        return h != null && ComputerUtilCard.isCardRemAIDeck(h) && flatMonteCarloActive() && !PrismaticStrandsAi.handlesHost(h)
                 && !deckPlan(player).combos.isKeyCard(h) && !TutorPlan.hasPlanTarget(player, sa);
     }
 

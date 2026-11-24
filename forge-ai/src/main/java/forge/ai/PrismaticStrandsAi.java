@@ -57,6 +57,19 @@ public final class PrismaticStrandsAi {
         return "baseline".equalsIgnoreCase(System.getProperty("grimoire.ai.prismaticStrands", "v1"));
     }
 
+    /**
+     * A carta tem a heurística dedicada ativa. O script mantém AI:RemoveDeck:All (dica para geração de decks); com a
+     * lógica original, essa marca tira a carta da lista de jogadas das heurísticas (só o Flat MC a considerava), então
+     * na prática a IA nunca a conjurava. Com a v1, a carta volta à lista e quem decide é {@link #decide}.
+     */
+    public static boolean handlesHost(final forge.game.card.Card host) {
+        if (host == null || isBaseline()) return false;
+        for (SpellAbility sa : host.getSpellAbilities()) {
+            if (LOGIC.equals(sa.getParam("AILogic"))) return true;
+        }
+        return false;
+    }
+
     /** Avaliação de uma cor. Valores em "pontos" na escala de {@link ComputerUtilCard#evaluateCreature}. */
     public static final class ColorEval {
         public final String color;

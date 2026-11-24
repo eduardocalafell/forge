@@ -27,7 +27,8 @@ public class ChooseColorAi extends SpellAbilityAi {
 
         if (PrismaticStrandsAi.LOGIC.equals(logic)) {
             if (PrismaticStrandsAi.isBaseline()) {
-                // lógica original do Forge (MostProminentInHumanDeck): conjura sempre que pode
+                // lógica original (AILogic$ MostProminentInHumanDeck + AI:RemoveDeck:All): as heurísticas nem chegam aqui,
+                // porque a carta sai da lista de jogadas; só o Flat MC a oferece, e então era aprovada sem critério.
                 return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
             }
             return PrismaticStrandsAi.decide(ai, sa);
