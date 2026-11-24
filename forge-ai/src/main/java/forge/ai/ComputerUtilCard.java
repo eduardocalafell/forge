@@ -1249,7 +1249,9 @@ public class ComputerUtilCard {
         if (sa.hasParam("AILogic")) {
             final String logic = sa.getParam("AILogic");
 
-            if (logic.equals("MostProminentInHumanDeck")) {
+            if (logic.equals(PrismaticStrandsAi.LOGIC) && !PrismaticStrandsAi.isBaseline()) {
+                chosen.add(PrismaticStrandsAi.chooseColor(ai, sa, colorChoices));
+            } else if (logic.equals("MostProminentInHumanDeck") || logic.equals(PrismaticStrandsAi.LOGIC)) {
                 chosen.add(getMostProminentColor(CardLists.filterControlledBy(game.getCardsInGame(), opp), colorChoices));
             } else if (logic.equals("MostProminentInComputerDeck")) {
                 chosen.add(getMostProminentColor(CardLists.filterControlledBy(game.getCardsInGame(), ai), colorChoices));

@@ -25,6 +25,14 @@ public class ChooseColorAi extends SpellAbilityAi {
         }
         final String logic = sa.getParam("AILogic");
 
+        if (PrismaticStrandsAi.LOGIC.equals(logic)) {
+            if (PrismaticStrandsAi.isBaseline()) {
+                // lógica original do Forge (MostProminentInHumanDeck): conjura sempre que pode
+                return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
+            }
+            return PrismaticStrandsAi.decide(ai, sa);
+        }
+
         if ("Nykthos, Shrine to Nyx".equals(sourceName)) {
             if (SpecialCardAi.NykthosShrineToNyx.consider(ai, sa)) {
                 return new AiAbilityDecision(100, AiPlayDecision.WillPlay);

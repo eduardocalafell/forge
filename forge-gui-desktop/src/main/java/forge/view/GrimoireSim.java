@@ -26,6 +26,8 @@ import com.google.gson.JsonParser;
 
 import forge.StaticData;
 import forge.ai.AiProfileUtil;
+import forge.ai.PrismaticStrandsAi;
+import forge.localinstance.properties.ForgePreferences;
 import forge.card.CardDb;
 import forge.card.CardRules;
 import forge.card.ICardFace;
@@ -71,7 +73,9 @@ public final class GrimoireSim {
     public static final int EXIT_RESTART = 3;
     public static final int EXIT_INVALID_DECKS = 4;
 
-    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
+    private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().serializeNulls().create();
+    /** Versão das heurísticas de IA do Grimoire neste fork. */
+    public static final String AI_VERSION = "grimoire-ai/2";
     private static PrintStream out;
 
     private GrimoireSim() { }
@@ -101,12 +105,26 @@ public final class GrimoireSim {
             }
         }
 
-        FModel.initialize(null, null);
+        // Nomes canônicos (inglês) no log e nos eventos: a interface traduz a estrutura, não os nomes das cartas.
+        FModel.initialize(null, prefs -> {
+            prefs.setPref(ForgePreferences.FPref.UI_LANGUAGE, "en-US");
+            return null;
+        });
         final String engine = BuildInfo.getVersionString();
+        final JsonObject build = readBuildInfo();
+        final String engineCommit = build.has("engineCommit") ? build.get("engineCommit").getAsString() : null;
+        // Variante da IA para cartas com heurística própria (baseline = lógica original do Forge).
+        final JsonObject overrides = job.has("aiOverrides") && job.get("aiOverrides").isJsonObject() ? job.getAsJsonObject("aiOverrides") : new JsonObject();
+        final String strands = overrides.has("prismaticStrands") ? overrides.get("prismaticStrands").getAsString() : "v1";
+        System.setProperty("grimoire.ai.prismaticStrands", "baseline".equals(strands) ? "baseline" : "v1");
+        final String aiVersion = AI_VERSION + "; " + PrismaticStrandsAi.VERSION.replace("/v1", "/" + ("baseline".equals(strands) ? "baseline" : "v1"));
+        final String cardDb = "forge-res@" + (engineCommit == null ? "?" : engineCommit.substring(0, Math.min(12, engineCommit.length())))
+                + " (" + StaticData.instance().getCommonCards().getUniqueCards().size() + " cartas)";
         final boolean commander = "commander".equalsIgnoreCase(str(job, "format", "constructed"));
 
         final Map<String, ResolvedDeck> decks = new LinkedHashMap<>();
-        final Ev report = event("validation").add("engine", engine);
+        final Ev report = event("validation").add("engine", engine).add("engineCommit", engineCommit)
+                .add("aiVersion", aiVersion).add("cardDb", cardDb).add("eventsSchema", GrimoireEventRecorder.SCHEMA_VERSION);
         boolean ok = true;
         for (String side : new String[] {"A", "B"}) {
             final JsonObject spec = job.getAsJsonObject("decks").getAsJsonObject(side);
@@ -138,7 +156,8 @@ public final class GrimoireSim {
         for (JsonElement el : games) {
             final JsonObject g = el.getAsJsonObject();
             final String id = g.get("id").getAsString();
-            final long seed = g.get("seed").getAsLong();
+            // A semente chega como string (ou número, em jobs antigos); Long.parseLong preserva os 64 bits.
+            final long seed = Long.parseLong(g.get("seed").getAsString().trim());
             final String first = g.has("first") ? g.get("first").getAsString() : "A";
             final boolean timedOut = runGame(id, seed, first, decks.get("A"), decks.get("B"), commander, profile, timeoutSec, logDir, maxLogLines, engine);
             if (timedOut) {
@@ -171,6 +190,14 @@ public final class GrimoireSim {
         final Match match = new Match(rules, players, "Grimoire " + id);
         final Game game = match.createGame();
         game.setNoGUIUser();
+        final GrimoireEventRecorder recorder = new GrimoireEventRecorder(game, Math.max(1000, maxLogLines * 4));
+        game.subscribeToEvents(recorder);
+        final List<java.util.Map<String, Object>> trace = new ArrayList<>();
+        PrismaticStrandsAi.traceSink = m -> {
+            if (trace.size() < 2000) {
+                trace.add(m);
+            }
+        };
 
         final long start = System.nanoTime();
         String result;
@@ -201,14 +228,19 @@ public final class GrimoireSim {
         final String started = starter == null ? null : starter.getRegisteredPlayer() == rpA ? "A" : "B";
         final int turns = game.getPhaseHandler() == null ? 0 : game.getPhaseHandler().getTurn();
 
+        PrismaticStrandsAi.traceSink = null;
         String logFile = null;
+        String eventsFile = null;
+        String traceFile = null;
         if (logDir != null) {
             logFile = writeLog(logDir, id, game, maxLogLines);
+            eventsFile = writeEvents(logDir, id, recorder, result, seed);
+            traceFile = trace.isEmpty() ? null : writeTrace(logDir, id, trace);
         }
         final Ev ev = event("game")
                 .add("id", id).add("result", result).add("reason", reason).add("first", started)
-                .add("requestedFirst", first).add("turns", turns).add("ms", ms).add("seed", seed)
-                .add("engine", engine).add("log", logFile).add("error", error);
+                .add("requestedFirst", first).add("turns", turns).add("ms", ms).add("seed", Long.toString(seed))
+                .add("engine", engine).add("log", logFile).add("events", eventsFile).add("trace", traceFile).add("error", error);
         emit(ev);
         return "timeout".equals(result);
     }
@@ -219,6 +251,61 @@ public final class GrimoireSim {
         final RegisteredPlayer rp = commander ? RegisteredPlayer.forCommander(d) : new RegisteredPlayer(d);
         rp.setPlayer(GamePlayerUtil.createAiPlayer(side, idx, profile));
         return rp;
+    }
+
+    /** Eventos estruturados: cabeçalho, eventos em ordem de sequence e rodapé de integridade (contagem e truncamento). */
+    private static String writeEvents(final File dir, final String id, final GrimoireEventRecorder rec, final String result, final long seed) {
+        final File f = new File(dir, id.replaceAll("[^A-Za-z0-9_-]", "_") + ".events.ndjson");
+        try (PrintWriter w = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8))) {
+            final JsonObject head = new JsonObject();
+            head.addProperty("type", "header");
+            head.addProperty("schemaVersion", GrimoireEventRecorder.SCHEMA_VERSION);
+            head.addProperty("game", id);
+            head.addProperty("seed", Long.toString(seed));
+            head.addProperty("players", "A,B");
+            w.println(GSON.toJson(head));
+            for (JsonObject o : rec.events()) {
+                w.println(GSON.toJson(o));
+            }
+            final JsonObject end = new JsonObject();
+            end.addProperty("type", "end");
+            end.addProperty("count", rec.events().size());
+            end.addProperty("emitted", rec.total());
+            end.addProperty("truncated", rec.truncated());
+            end.addProperty("result", result);
+            w.println(GSON.toJson(end));
+            return f.getName();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** Trace de decisões da IA (separado dos eventos de regras). */
+    private static String writeTrace(final File dir, final String id, final List<java.util.Map<String, Object>> trace) {
+        final File f = new File(dir, id.replaceAll("[^A-Za-z0-9_-]", "_") + ".trace.ndjson");
+        try (PrintWriter w = new PrintWriter(new FileWriter(f, StandardCharsets.UTF_8))) {
+            for (java.util.Map<String, Object> m : trace) {
+                w.println(GSON.toJson(m));
+            }
+            return f.getName();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** grimoire-build.json (gerado no build do snapshot) com o commit do fork. */
+    private static JsonObject readBuildInfo() {
+        for (String p : new String[] {"../grimoire-build.json", "grimoire-build.json"}) {
+            try {
+                final File f = new File(p);
+                if (f.isFile()) {
+                    return JsonParser.parseString(Files.readString(f.toPath(), StandardCharsets.UTF_8)).getAsJsonObject();
+                }
+            } catch (Exception ignored) {
+                // segue sem o commit
+            }
+        }
+        return new JsonObject();
     }
 
     private static String writeLog(final File dir, final String id, final Game game, final int maxLines) {
