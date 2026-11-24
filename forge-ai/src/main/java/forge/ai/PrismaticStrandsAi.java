@@ -226,6 +226,11 @@ public final class PrismaticStrandsAi {
 
     /* ------------------------------------------------------------------------------------- combate */
 
+    /** A criatura ainda vai causar dano neste combate? Na etapa de primeiro golpe, quem só tem primeiro golpe já causou. */
+    private static boolean damagePending(final Card c, final boolean firstStrikeDone) {
+        return !firstStrikeDone || c.hasDoubleStrike() || !c.hasFirstStrike();
+    }
+
     private static boolean evaluateCombat(final Player ai, final Combat combat, final Plan plan) {
         final Game game = ai.getGame();
         final PhaseHandler ph = game.getPhaseHandler();
@@ -234,6 +239,11 @@ public final class PrismaticStrandsAi {
         if (combat.getAttackers().isEmpty()) {
             return false;
         }
+        // O dano de combate é causado no início da etapa de dano, antes da prioridade: depois dela não há o que prevenir.
+        if (ph.getPhase() == PhaseType.COMBAT_DAMAGE || ph.getPhase() == PhaseType.COMBAT_END) {
+            return false;
+        }
+        final boolean firstStrikeDone = ph.getPhase() == PhaseType.COMBAT_FIRST_STRIKE_DAMAGE;
         if (defending && !blocksKnown) {
             // Antes dos bloqueios só faz sentido agir se nem o melhor bloqueio salva (avaliado abaixo como letal).
             plan.waitForBlocks = true;
@@ -241,10 +251,11 @@ public final class PrismaticStrandsAi {
 
         // 1. Dano que chegaria ao jogador da IA (atacantes adversários sem bloqueio / com atropelar).
         if (defending) {
-            final int remain = ComputerUtilCombat.lifeThatWouldRemain(ai, combat);
-            plan.lifeAfterCombat = remain;
-            plan.incomingDamage = Math.max(0, ai.getLife() - remain);
+            int remain = firstStrikeDone ? ai.getLife() : ComputerUtilCombat.lifeThatWouldRemain(ai, combat);
             for (Card atk : combat.getAttackersOf(ai)) {
+                if (!damagePending(atk, firstStrikeDone)) {
+                    continue;
+                }
                 final ColorSet cs = atk.getColor();
                 final boolean blocked = !combat.getBlockers(atk).isEmpty();
                 int dmg = 0;
@@ -253,6 +264,9 @@ public final class PrismaticStrandsAi {
                 }
                 if (dmg <= 0) {
                     continue;
+                }
+                if (firstStrikeDone) {
+                    remain -= dmg;
                 }
                 plan.threats.add(atk.getName() + " (" + atk.getId() + "): " + dmg + " ao jogador");
                 if (!atk.canDamagePrevented(true)) {
@@ -265,6 +279,8 @@ public final class PrismaticStrandsAi {
                     }
                 }
             }
+            plan.lifeAfterCombat = remain;
+            plan.incomingDamage = Math.max(0, ai.getLife() - remain);
             if (plan.incomingDamage >= ai.getLife() || plan.lifeAfterCombat < 1) {
                 for (ColorEval e : plan.byColor.values()) {
                     if (plan.lifeAfterCombat + e.lifeSaved >= 1) {
@@ -284,7 +300,7 @@ public final class PrismaticStrandsAi {
                 // Meu atacante bloqueado: preveni-lo se os bloqueadores o matariam.
                 if (ComputerUtilCombat.attackerWouldBeDestroyed(ai, atk, combat)) {
                     for (Card b : blockers) {
-                        if (!b.canDamagePrevented(true)) {
+                        if (!b.canDamagePrevented(true) || !damagePending(b, firstStrikeDone)) {
                             continue;
                         }
                         addSaved(plan, b.getColor(), atk, b);
@@ -302,7 +318,7 @@ public final class PrismaticStrandsAi {
                     if (!b.getController().equals(ai)) {
                         continue;
                     }
-                    if (ComputerUtilCombat.blockerWouldBeDestroyed(ai, b, combat) && atk.canDamagePrevented(true)) {
+                    if (ComputerUtilCombat.blockerWouldBeDestroyed(ai, b, combat) && atk.canDamagePrevented(true) && damagePending(atk, firstStrikeDone)) {
                         addSaved(plan, atk.getColor(), b, atk);
                     }
                 }
@@ -527,6 +543,9 @@ public final class PrismaticStrandsAi {
         }
         final Game game = ai.getGame();
         final String key = kind + "|" + game.getPhaseHandler().getTurn() + "|" + game.getPhaseHandler().getPhase() + "|" + plan.cast + "|" + plan.color + "|" + game.getStack().size();
+        if ("consider".equals(kind) && "no_threat".equals(plan.situation)) {
+            return; // sem dano em jogo: nada a explicar, e seriam milhares de linhas por partida
+        }
         if ("consider".equals(kind) && key.equals(lastTraceKey)) {
             return; // a IA reavalia várias vezes na mesma prioridade; grava só mudanças
         }

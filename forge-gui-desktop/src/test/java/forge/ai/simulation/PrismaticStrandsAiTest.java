@@ -272,6 +272,18 @@ public class PrismaticStrandsAiTest extends FlatMcTestBase {
         assertTrue(hand.castCost < costAfterBlocks);
     }
 
+    // depois que o dano de combate foi causado, conjurar não previne mais nada daquele combate
+    @Test
+    public void tooLateAfterCombatDamage() {
+        ai.setLife(3, null);
+        at(PhaseType.COMBAT_DAMAGE, opp);
+        game.getCombat().addAttacker(creature("Grizzly Bears", false), ai);
+        game.getCombat().addAttacker(creature("Grizzly Bears", false), ai);
+        final Plan p = decide(strands(ZoneType.Hand));
+        assertFalse(p.cast, p.reason);
+        assertEquals(p.situation, "no_threat");
+    }
+
     // a heurística v1 tira a carta do filtro AI:RemoveDeck:All; a baseline mantém o comportamento original
     @Test
     public void dedicatedLogicPutsTheCardBackInThePlayList() {
