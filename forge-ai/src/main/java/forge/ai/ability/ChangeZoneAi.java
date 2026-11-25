@@ -1476,7 +1476,10 @@ public class ChangeZoneAi extends SpellAbilityAi {
             return false;
         }
         final Card discard = ComputerUtilCard.getWorstAI(hand);
-        final Card back = ComputerUtilCard.getBestAI(graveyard);
+        // the same pick the targeting below makes (it prefers a creature castable soon over a bigger one), so the
+        // comparison is with the card that really comes back
+        final CardCollection creatures = CardLists.filter(graveyard, CardPredicates.CREATURES);
+        final Card back = creatures.isEmpty() ? ComputerUtilCard.getBestAI(graveyard) : chooseCreature(ai, creatures);
         if (discard == null || back == null) {
             return false;
         }
