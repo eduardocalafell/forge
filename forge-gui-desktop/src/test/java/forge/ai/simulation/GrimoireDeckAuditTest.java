@@ -6,6 +6,7 @@ import java.util.List;
 import com.google.gson.JsonObject;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+import static org.testng.Assert.*;
 
 import forge.ai.PlayerControllerAi;
 import forge.game.GameObject;
@@ -17,7 +18,8 @@ import forge.view.GrimoireAiConfig;
 
 /**
  * Cartas dos decks do usuário que ficaram presas na mão em partidas IA x IA (Seam Rip, Shardmage's Rescue).
- * Primeiro observa: cada cenário imprime o que a IA escolhe nos dois modos.
+ * Seam Rip já era jogado quando há alvo. Shardmage's Rescue nunca respondia a remoção: a lógica de aura com lampejo
+ * só considerava a resistência extra, não a resistência a magia que faz a remoção perder o alvo.
  */
 public class GrimoireDeckAuditTest extends FlatMcTestBase {
     @BeforeMethod public void setup() { setUpGame(); }
@@ -79,7 +81,10 @@ public class GrimoireDeckAuditTest extends FlatMcTestBase {
         bf(target, false);
         put("Seam Rip", ai, ZoneType.Hand);
         at(phase, ai);
-        return decide("seam-rip-vs-" + target.replace(' ', '-') + "-" + phase, bounded, "Seam Rip");
+        final String r = decide("seam-rip-vs-" + target.replace(' ', '-') + "-" + phase, bounded, "Seam Rip");
+        assertEquals(r, "Seam Rip");
+        assertFalse(names(opp.getCardsIn(ZoneType.Battlefield)).contains(target), target + " exilado");
+        return r;
     }
 
     @Test public void seamRipGuideMain1H() { seamRip(false, "Goblin Guide", PhaseType.MAIN1); }
@@ -89,35 +94,33 @@ public class GrimoireDeckAuditTest extends FlatMcTestBase {
 
     // ------------------------------------------------------------------ Shardmage's Rescue ({W}, lampejo, +1/+1, resistência a magia no turno)
 
-    private String rescueMain(final boolean bounded) {
+    /** Remoção do oponente mirando nossa criatura: o Rescue entra com resistência a magia e a mágica perde o alvo. */
+    private void rescueVsRemoval(final boolean bounded, final String creature, final String removal, final boolean expectCast) {
         mode(bounded);
         plains(1);
-        bf("Skyward Spider", true);
-        put("Shardmage's Rescue", ai, ZoneType.Hand);
-        at(PhaseType.MAIN1, ai);
-        return decide("rescue-own-main", bounded, "Shardmage's Rescue");
-    }
-
-    @Test public void rescueMainH() { rescueMain(false); }
-    @Test public void rescueMainB() { rescueMain(true); }
-
-    private String rescueVsBolt(final boolean bounded) {
-        mode(bounded);
-        plains(1);
-        final Card spider = bf("Skyward Spider", true);
+        final Card mine = bf(creature, true);
         put("Shardmage's Rescue", ai, ZoneType.Hand);
         at(PhaseType.MAIN1, opp);
-        final SpellAbility bolt = put("Lightning Bolt", opp, ZoneType.Hand).getFirstSpellAbility();
-        bolt.setActivatingPlayer(opp);
-        bolt.getTargets().add(spider);
-        game.getStack().add(bolt);
-        final String r = decide("rescue-vs-bolt", bounded, "Shardmage's Rescue");
+        final SpellAbility spell = put(removal, opp, ZoneType.Hand).getFirstSpellAbility();
+        spell.setActivatingPlayer(opp);
+        spell.getTargets().add(mine);
+        game.getStack().add(spell);
+        final String scenario = "rescue-vs-" + removal.replace(' ', '-') + "-on-" + creature.replace(' ', '-');
+        final String r = decide(scenario, bounded, "Shardmage's Rescue");
         while (!game.getStack().isEmpty()) game.getStack().resolveStack();
-        System.out.println("DECKAUDIT rescue-vs-bolt [" + (bounded ? "bounded" : "heuristic") + "] spiderSurvives="
-                + names(ai.getCardsIn(ZoneType.Battlefield)).contains("Skyward Spider"));
-        return r;
+        final boolean survives = names(ai.getCardsIn(ZoneType.Battlefield)).contains(creature);
+        System.out.println("DECKAUDIT " + scenario + " [" + (bounded ? "bounded" : "heuristic") + "] survives=" + survives);
+        if (expectCast) {
+            assertEquals(r, "Shardmage's Rescue -> [" + creature + "]");
+            assertTrue(survives, creature + " sobrevive");
+        } else {
+            assertEquals(r, "pass", "a remoção não mata: guarda o Rescue");
+        }
     }
 
-    @Test public void rescueVsBoltH() { rescueVsBolt(false); }
-    @Test public void rescueVsBoltB() { rescueVsBolt(true); }
+    @Test public void rescueVsBoltH() { rescueVsRemoval(false, "Optimistic Scavenger", "Lightning Bolt", true); }
+    @Test public void rescueVsBoltB() { rescueVsRemoval(true, "Optimistic Scavenger", "Lightning Bolt", true); }
+    @Test public void rescueVsDoomBladeH() { rescueVsRemoval(false, "Veteran Survivor", "Doom Blade", true); }
+    @Test public void rescueVsShockNotLethalH() { rescueVsRemoval(false, "Hill Giant", "Shock", false); }
+    @Test public void rescueVsShockNotLethalB() { rescueVsRemoval(true, "Hill Giant", "Shock", false); }
 }

@@ -69,6 +69,15 @@ public class AttachAi extends SpellAbilityAi {
             return new AiAbilityDecision(0, AiPlayDecision.CantPlayAi);
         }
 
+        // Grimoire: a flash aura that grants hexproof or shroud (Shardmage's Rescue) answers an opponent's spell aimed
+        // at one of our creatures: the spell loses its target. The buff-aura logic below only counted toughness.
+        final Card saved = targetingImmunitySave(ai, sa);
+        if (saved != null) {
+            sa.resetTargets();
+            sa.getTargets().add(saved);
+            return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
+        }
+
         // Attach spells always have a target
         final TargetRestrictions tgt = sa.getTargetRestrictions();
         if (tgt != null) {
@@ -94,6 +103,46 @@ public class AttachAi extends SpellAbilityAi {
         }
 
         return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
+    }
+
+    /**
+     * Grimoire: our creature targeted by the opponent's spell or ability on top of the stack that would remove or
+     * kill it, when this aura spell can be cast now and gives the enchanted creature hexproof or shroud.
+     */
+    static Card targetingImmunitySave(final Player ai, final SpellAbility sa) {
+        final Card source = sa.getHostCard();
+        final Game game = ai.getGame();
+        if (!sa.isSpell() || source == null || !source.isAura() || !sa.usesTargeting() || game.getStack().isEmpty()
+                || !grantsTargetingImmunity(source)) {
+            return null;
+        }
+        final SpellAbility top = game.getStack().peekAbility();
+        if (top == null || top.getActivatingPlayer() == null || !top.getActivatingPlayer().isOpponentOf(ai) || !top.usesTargeting()) {
+            return null;
+        }
+        final List<GameObject> threatened = ComputerUtil.predictThreatenedObjects(ai, null, true);
+        for (final Card c : top.getTargets().getTargetCards()) {
+            if (c.getController().equals(ai) && c.isCreature() && threatened.contains(c) && sa.canTarget(c)
+                    && !c.hasKeyword(Keyword.HEXPROOF) && !c.hasKeyword(Keyword.SHROUD)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    private static boolean grantsTargetingImmunity(final Card source) {
+        for (final StaticAbility st : source.getStaticAbilities()) {
+            if (!st.checkMode(StaticAbilityMode.Continuous) || !st.hasParam("AddKeyword")
+                    || !"Enchanted".equals(st.getParam("AffectedDefined"))) {
+                continue;
+            }
+            for (final String k : st.getParam("AddKeyword").split(" & ")) {
+                if ("Hexproof".equals(k.trim()) || "Shroud".equals(k.trim())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean doAdvancedFlashAuraLogic(Player ai, SpellAbility sa, Card attachTarget) {
