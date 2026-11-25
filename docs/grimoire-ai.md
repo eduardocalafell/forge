@@ -22,3 +22,12 @@ Both cards carried `AI:RemoveDeck:All`, which in this fork also removes a card f
 - **Bounded search discovery:** Flat MC offers plays the heuristics refused to the rollouts as "discovered" candidates. For these two cards the audited refusal is final (`ChangeZoneAi.auditedVetoIsFinal`): smoke games showed Tortured Existence churning in bounded mode (Mulldrifter for Merfolk Looter, then Looter for Looter) before this guard.
 
 `GrimoireCardAuditTest` covers 13 scenarios in both search modes plus three discovery checks. Known limit: `evaluateCreature` does not value ETB effects, and the harness checks the chosen targets rather than resolved triggers. Inside Out was not audited.
+
+## Deck audit: cards that stayed in hand
+
+AI x AI games with the user's decks (Mono-White Aggro, Mono White Auras, Mono Green Energy padded with Forests) against a red midrange deck, eight games per search mode, count how often each card in hand was played. `GrimoireDeckAuditTest` reproduces the suspects:
+
+- **Shardmage's Rescue** (fixed): the advanced flash-aura logic only answered a spell when the extra toughness saved the creature, so a hexproof aura never answered Lightning Bolt or Doom Blade (`AttachAi.targetingImmunitySave`). A buff aura now answers damage only when that damage would otherwise kill. After the fix, Rescue in hand was played 70% of the time in heuristic games (was 40%), with Searing Spear fizzling in real games.
+- **Seam Rip, Sheltered by Ghosts**: cast whenever a target exists and mana allows; copies left in hand came from no target or mana spent on other plays.
+- **Rhonas's Monument**: the second copy is legendary; the first waits for three mana.
+- **Spellbook Vendor**: pays for the Role when it survives to combat.

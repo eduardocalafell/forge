@@ -132,7 +132,9 @@ public class GrimoireDeckAuditTest extends FlatMcTestBase {
         bf(theirs, false);
         put("Sheltered by Ghosts", ai, ZoneType.Hand);
         at(phase, ai);
-        return decide("sheltered-" + mine.replace(' ', '-') + "-vs-" + theirs.replace(' ', '-') + "-" + phase, bounded, "Sheltered by Ghosts");
+        final String r = decide("sheltered-" + mine.replace(' ', '-') + "-vs-" + theirs.replace(' ', '-') + "-" + phase, bounded, "Sheltered by Ghosts");
+        assertEquals(r, "Sheltered by Ghosts -> [" + mine + "]");
+        return r;
     }
 
     @Test public void shelteredRaiderMain1H() { sheltered(false, "Veteran Survivor", "Keldon Raider", PhaseType.MAIN1); }
