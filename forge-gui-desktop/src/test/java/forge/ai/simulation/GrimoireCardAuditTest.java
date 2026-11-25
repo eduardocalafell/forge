@@ -63,9 +63,19 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
 
     /** O que a IA quer fazer agora (primeira escolha) e, se for a carta auditada, o efeito real depois de pagar e resolver. */
     private Map<String, Object> decide(final String card) {
+        final List<String> decisions = new ArrayList<>();
+        for (Card c : game.getCardsInGame()) {
+            if (!c.getName().equals(card) || !c.getController().equals(ai)) continue;
+            for (SpellAbility sa : c.getAllSpellAbilities()) {
+                sa.setActivatingPlayer(ai);
+                decisions.add(c.getZone().getZoneType() + ":" + brain().canPlaySa(sa) + (sa.getTargets().isEmpty() ? "" : " " + describe(sa)));
+                sa.resetTargets();
+            }
+        }
         final List<SpellAbility> chosen = brain().chooseSpellAbilityToPlay();
         final SpellAbility first = chosen == null || chosen.isEmpty() ? null : chosen.get(0);
         final Map<String, Object> o = new LinkedHashMap<>();
+        o.put("canPlaySa", decisions);
         o.put("choice", describe(first));
         o.put("usesCard", first != null && first.getHostCard().getName().equals(card));
         if (first != null && first.getHostCard().getName().equals(card)) {
