@@ -101,6 +101,35 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         System.out.println("AUDIT " + scenario + " [" + mode + "] " + GSON.toJson(observed).replace('\n', ' '));
     }
 
+    // ------------------------------------------------------------------ controles do arnês
+
+    @Test public void controlCastsCreature() {
+        mode(false);
+        put("Forest", 2, ai, ZoneType.Battlefield).forEach(c -> c.setSickness(false));
+        put("Grizzly Bears", ai, ZoneType.Hand);
+        at(PhaseType.MAIN1, ai);
+        row("control-casts-creature", "heuristic", "conjura Grizzly Bears", decide("Grizzly Bears"));
+    }
+
+    @Test public void controlBurnsForLethal() {
+        mode(false);
+        opp.setLife(3, null);
+        put("Mountain", 1, ai, ZoneType.Battlefield).forEach(c -> c.setSickness(false));
+        put("Lightning Bolt", ai, ZoneType.Hand);
+        at(PhaseType.MAIN1, ai);
+        row("control-burns-for-lethal", "heuristic", "Raio no oponente", decide("Lightning Bolt"));
+    }
+
+    @Test public void controlRegrowthAbility() {
+        mode(false);
+        swamps(2);
+        bf("Volrath's Stronghold", true);
+        put("Gurmag Angler", ai, ZoneType.Graveyard);
+        put("Swamp", 10, ai, ZoneType.Library);
+        at(PhaseType.END_OF_TURN, opp);
+        row("control-graveyard-ability", "heuristic", "usa a habilidade de recuperar criatura (sem custo de descarte)", decide("Volrath's Stronghold"));
+    }
+
     // ------------------------------------------------------------------ Ghostly Flicker
 
     private void islands(final int n) { put("Island", n, ai, ZoneType.Battlefield).forEach(c -> c.setSickness(false)); }
@@ -116,6 +145,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         bolt.getTargets().add(angel);
         game.getStack().add(bolt);
         final Map<String, Object> o = decide("Ghostly Flicker");
+        while (!game.getStack().isEmpty()) game.getStack().resolveStack();
         o.put("angelSurvives", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Serra Angel"));
         row("flicker-saves-from-bolt", bounded ? "bounded" : "heuristic", "responde ao Raio exilando Serra Angel + outra permanente (terreno), e a Angel sobrevive", o);
     }
@@ -162,6 +192,8 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         bolt.getTargets().add(bears);
         game.getStack().add(bolt);
         final Map<String, Object> o = decide("Ghostly Flicker");
+        while (!game.getStack().isEmpty()) game.getStack().resolveStack();
+        o.put("bearsSurvive", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Grizzly Bears"));
         o.put("tokenSurvives", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Grizzly Bears(token)"));
         row("flicker-avoids-token", bounded ? "bounded" : "heuristic", "se conjurar para salvar os Bears, o segundo alvo é um terreno, nunca a ficha", o);
     }
