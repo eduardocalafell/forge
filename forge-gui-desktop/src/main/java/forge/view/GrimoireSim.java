@@ -85,6 +85,10 @@ public final class GrimoireSim {
         out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), true, StandardCharsets.UTF_8);
         System.setOut(System.err);
 
+        if (args.length >= 3 && "duel".equals(args[1])) {
+            GrimoireDuel.main(args, out);
+            return;
+        }
         if (args.length < 3 || !("validate".equals(args[1]) || "run".equals(args[1]))) {
             emit(event("error").add("message", "Uso: grimoire validate|run <job.json> [--logs <dir>]"));
             exit(EXIT_BAD_INPUT);
@@ -294,7 +298,7 @@ public final class GrimoireSim {
     }
 
     /** grimoire-build.json (gerado no build do snapshot) com o commit do fork. */
-    private static JsonObject readBuildInfo() {
+    static JsonObject readBuildInfo() {
         for (String p : new String[] {"../grimoire-build.json", "grimoire-build.json"}) {
             try {
                 final File f = new File(p);
@@ -329,7 +333,7 @@ public final class GrimoireSim {
 
     /* --------------------------------------------------------------- validação */
 
-    private static final class ResolvedDeck {
+    static final class ResolvedDeck {
         String name;
         boolean ok = true;
         final JsonObject report = new JsonObject();
@@ -346,7 +350,7 @@ public final class GrimoireSim {
         }
     }
 
-    private static ResolvedDeck resolveDeck(final String side, final JsonObject spec, final boolean commander) {
+    static ResolvedDeck resolveDeck(final String side, final JsonObject spec, final boolean commander) {
         final ResolvedDeck rd = new ResolvedDeck();
         rd.name = str(spec, "name", side);
         final JsonArray cards = new JsonArray();
