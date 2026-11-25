@@ -32,7 +32,6 @@ import forge.gamemodes.match.input.InputLockUI;
 import forge.gui.FThreads;
 import forge.player.PlayerControllerHuman;
 import forge.trackable.TrackableObject;
-import forge.trackable.TrackableTypes;
 import forge.util.collect.FCollection;
 
 /**
@@ -1160,33 +1159,71 @@ public final class DuelSession {
         }
     }
 
+    // O Tracker só indexa objetos desserializados (rede); aqui procuramos nas próprias views.
     private CardView lookupCard(final Game g, final String id) {
         if (id == null || !id.matches("\\d{1,9}")) {
             return null;
         }
-        final CardView cv = g.getTracker().getObj(TrackableTypes.CardViewType, Integer.parseInt(id));
-        if (cv == null) {
-            return null;
+        final int want = Integer.parseInt(id);
+        final ZoneType[] zones = {ZoneType.Battlefield, ZoneType.Hand, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command, ZoneType.Library, ZoneType.Stack};
+        for (PlayerView p : g.getView().getPlayers()) {
+            for (ZoneType z : zones) {
+                final Iterable<CardView> cards = p.getCards(z);
+                if (cards == null) {
+                    continue;
+                }
+                for (CardView cv : cards) {
+                    if (cv.getId() != want) {
+                        continue;
+                    }
+                    // só objetos que o humano enxerga (ou permanentes face para baixo, que ele pode apontar)
+                    return Views.visible(cv, humanView) || cv.getZone() == ZoneType.Battlefield ? cv : null;
+                }
+            }
         }
-        // só objetos que o humano enxerga (ou permanentes face para baixo, que ele pode apontar)
-        if (!Views.visible(cv, humanView) && cv.getZone() != ZoneType.Battlefield) {
-            return null;
+        final Selection sel;
+        synchronized (lock) {
+            sel = selection;
         }
-        return cv;
+        for (CardView cv : sel.cards()) {
+            if (cv.getId() == want && Views.visible(cv, humanView)) {
+                return cv;
+            }
+        }
+        for (TrackableObject t : sel.targets()) {
+            if (t instanceof CardView cv && cv.getId() == want && Views.visible(cv, humanView)) {
+                return cv;
+            }
+        }
+        return null;
     }
 
     private static PlayerView lookupPlayer(final Game g, final String id) {
         if (id == null || !id.matches("\\d{1,9}")) {
             return null;
         }
-        return g.getTracker().getObj(TrackableTypes.PlayerViewType, Integer.parseInt(id));
+        final int want = Integer.parseInt(id);
+        for (PlayerView p : g.getView().getPlayers()) {
+            if (p.getId() == want) {
+                return p;
+            }
+        }
+        return null;
     }
 
     private static StackItemView lookupStack(final Game g, final String id) {
         if (id == null || !id.matches("\\d{1,9}")) {
             return null;
         }
-        return g.getTracker().getObj(TrackableTypes.StackItemViewType, Integer.parseInt(id));
+        final int want = Integer.parseInt(id);
+        if (g.getView().getStack() != null) {
+            for (StackItemView si : g.getView().getStack()) {
+                if (si.getId() == want) {
+                    return si;
+                }
+            }
+        }
+        return null;
     }
 
     private static JsonObject ok() {
