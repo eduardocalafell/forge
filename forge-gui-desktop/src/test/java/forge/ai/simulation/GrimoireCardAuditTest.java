@@ -153,7 +153,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         islands(3);
         final Card bears = bf("Grizzly Bears", true);
         final Card token = put("Grizzly Bears", ai, ZoneType.Battlefield);
-        token.setToken(true);
+        token.setGamePieceType(forge.game.card.GamePieceType.TOKEN);
         token.setSickness(false);
         put("Ghostly Flicker", ai, ZoneType.Hand);
         at(PhaseType.MAIN1, opp);
