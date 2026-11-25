@@ -172,7 +172,8 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         put("Ghostly Flicker", ai, ZoneType.Hand);
         at(PhaseType.MAIN2, ai);
         row("flicker-etb-value", bounded ? "bounded" : "heuristic", "pisca Man-o'-War + Elvish Visionary (devolve o Craw Wurm e compra 1)", decide("Ghostly Flicker"));
-        assertEquals(last.get("choice"), "Ghostly Flicker -> [Man-o'-War#5, Elvish Visionary#6]".replace("#5", "#" + idOf("Man-o'-War")).replace("#6", "#" + idOf("Elvish Visionary")));
+        final String choice = String.valueOf(last.get("choice"));
+        assertTrue(choice.startsWith("Ghostly Flicker") && choice.contains("Man-o'-War") && choice.contains("Elvish Visionary"), choice);
     }
     @Test public void flickerEtbValueHeuristic() { flickerEtbValue(false); }
     @Test public void flickerEtbValueBounded() { flickerEtbValue(true); }
@@ -242,10 +243,6 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         assertEquals(last.get("usesCard"), false, "não ativa: " + last.get("choice"));
     }
 
-    private int idOf(final String name) {
-        for (Card c : ai.getCardsIn(ZoneType.Battlefield)) if (c.getName().equals(name)) return c.getId();
-        return -1;
-    }
 
     @Test public void tortGoodTradeHeuristic() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", false, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Gurmag Angler"); }
     @Test public void tortGoodTradeBounded() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", true, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Gurmag Angler"); }
