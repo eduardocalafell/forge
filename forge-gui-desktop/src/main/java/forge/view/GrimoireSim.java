@@ -75,7 +75,7 @@ public final class GrimoireSim {
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().serializeNulls().create();
     /** Versão das heurísticas de IA do Grimoire neste fork. */
-    public static final String AI_VERSION = "grimoire-ai/2";
+    public static final String AI_VERSION = GrimoireAiConfig.VERSION;
     private static PrintStream out;
 
     private GrimoireSim() { }
@@ -118,17 +118,15 @@ public final class GrimoireSim {
         final JsonObject build = readBuildInfo();
         final String engineCommit = build.has("engineCommit") ? build.get("engineCommit").getAsString() : null;
         // Variante da IA para cartas com heurística própria (baseline = lógica original do Forge).
-        final JsonObject overrides = job.has("aiOverrides") && job.get("aiOverrides").isJsonObject() ? job.getAsJsonObject("aiOverrides") : new JsonObject();
-        final String strands = overrides.has("prismaticStrands") ? overrides.get("prismaticStrands").getAsString() : "v1";
-        System.setProperty("grimoire.ai.prismaticStrands", "baseline".equals(strands) ? "baseline" : "v1");
-        final String aiVersion = AI_VERSION + "; " + PrismaticStrandsAi.VERSION.replace("/v1", "/" + ("baseline".equals(strands) ? "baseline" : "v1"));
+        final GrimoireAiConfig aiConfig = new GrimoireAiConfig(job);
+        final String aiVersion = aiConfig.version();
         final String cardDb = "forge-res@" + (engineCommit == null ? "?" : engineCommit.substring(0, Math.min(12, engineCommit.length())))
                 + " (" + StaticData.instance().getCommonCards().getUniqueCards().size() + " cartas)";
         final boolean commander = "commander".equalsIgnoreCase(str(job, "format", "constructed"));
 
         final Map<String, ResolvedDeck> decks = new LinkedHashMap<>();
         final Ev report = event("validation").add("engine", engine).add("engineCommit", engineCommit)
-                .add("aiVersion", aiVersion).add("cardDb", cardDb).add("eventsSchema", GrimoireEventRecorder.SCHEMA_VERSION);
+                .add("aiVersion", aiVersion).add("aiSearch", aiConfig.metadata()).add("cardDb", cardDb).add("eventsSchema", GrimoireEventRecorder.SCHEMA_VERSION);
         boolean ok = true;
         for (String side : new String[] {"A", "B"}) {
             final JsonObject spec = job.getAsJsonObject("decks").getAsJsonObject(side);
@@ -163,7 +161,7 @@ public final class GrimoireSim {
             // A semente chega como string (ou número, em jobs antigos); Long.parseLong preserva os 64 bits.
             final long seed = Long.parseLong(g.get("seed").getAsString().trim());
             final String first = g.has("first") ? g.get("first").getAsString() : "A";
-            final boolean timedOut = runGame(id, seed, first, decks.get("A"), decks.get("B"), commander, profile, timeoutSec, logDir, maxLogLines, engine);
+            final boolean timedOut = runGame(id, seed, first, decks.get("A"), decks.get("B"), commander, profile, timeoutSec, logDir, maxLogLines, engine, aiConfig);
             if (timedOut) {
                 emit(event("restart").add("after", id).add("reason", "timeout"));
                 exit(EXIT_RESTART);
@@ -177,7 +175,7 @@ public final class GrimoireSim {
 
     private static boolean runGame(final String id, final long seed, final String first, final ResolvedDeck a, final ResolvedDeck b,
                                    final boolean commander, final String profile, final int timeoutSec, final File logDir,
-                                   final int maxLogLines, final String engine) {
+                                   final int maxLogLines, final String engine, final GrimoireAiConfig aiConfig) {
         MyRandom.setRandom(new Random(seed));
         final GameType type = commander ? GameType.Commander : GameType.Constructed;
         final GameRules rules = new GameRules(type);
@@ -193,6 +191,7 @@ public final class GrimoireSim {
         players.add(rpB);
         final Match match = new Match(rules, players, "Grimoire " + id);
         final Game game = match.createGame();
+        aiConfig.apply(game);
         game.setNoGUIUser();
         final GrimoireEventRecorder recorder = new GrimoireEventRecorder(game, Math.max(1000, maxLogLines * 4));
         game.subscribeToEvents(recorder);
@@ -244,6 +243,7 @@ public final class GrimoireSim {
         final Ev ev = event("game")
                 .add("id", id).add("result", result).add("reason", reason).add("first", started)
                 .add("requestedFirst", first).add("turns", turns).add("ms", ms).add("seed", Long.toString(seed))
+                .add("aiSearchStats", GrimoireAiConfig.statistics(game))
                 .add("engine", engine).add("log", logFile).add("events", eventsFile).add("trace", traceFile).add("error", error);
         emit(ev);
         return "timeout".equals(result);

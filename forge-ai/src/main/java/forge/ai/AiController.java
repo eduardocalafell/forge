@@ -2756,6 +2756,7 @@ public class AiController {
         } else if (game.getAIFlatMonteCarloLite()) {
             cfg.mobileLite();
         }
+        applyFlatMonteCarloLimits(cfg);
         if (flatMcSlowTrips > 0) {
             // Back after a pause for slowness: a smaller search, and no look at the opponent's turn, which costs most.
             cfg.maxCandidates = Math.max(3, cfg.maxCandidates - 2 * flatMcSlowTrips);
@@ -2769,6 +2770,28 @@ public class AiController {
         }
         cfg.budgetNanos = Math.min(cfg.budgetNanos, left);
         return cfg;
+    }
+
+    private boolean boundedFlatMc;
+
+    /** Explicit server budget; game copies do not inherit it or enable recursive searches. */
+    public void setBoundedFlatMonteCarlo(final boolean bounded) {
+        boundedFlatMc = bounded;
+    }
+
+    public void applyFlatMonteCarloLimits(final FlatMonteCarloPicker.Config cfg) {
+        if (!boundedFlatMc) return;
+        cfg.budgetNanos = Math.min(cfg.budgetNanos, TimeUnit.MILLISECONDS.toNanos(350));
+        cfg.turnBudgetNanos = Math.min(cfg.turnBudgetNanos, TimeUnit.MILLISECONDS.toNanos(1400));
+        cfg.maxCandidates = Math.min(cfg.maxCandidates, 4);
+        cfg.rolloutsPerCandidate = Math.min(cfg.rolloutsPerCandidate, 3);
+        cfg.maxPlayoutPlays = Math.min(cfg.maxPlayoutPlays, 4);
+        cfg.comboPlayoutPlays = Math.min(cfg.comboPlayoutPlays, 8);
+        cfg.extraRounds = Math.min(cfg.extraRounds, 1);
+        cfg.targetVariants = Math.min(cfg.targetVariants, 1);
+        cfg.extraCandidates = Math.min(cfg.extraCandidates, 2);
+        cfg.opponentLookaheadPercent = 0;
+        cfg.broadDiscovery = false;
     }
 
     /** Logs a play dropped from the list of candidates (see {@link VetoLog}); always true, so it chains onto a test. */

@@ -165,7 +165,7 @@ public final class GrimoireDuel {
             prefs.setPref(ForgePreferences.FPref.YIELD_SKIP_PHASE_DELAY, "true");
             return null;
         });
-        System.setProperty("grimoire.ai.prismaticStrands", "v1");
+        final GrimoireAiConfig aiConfig = new GrimoireAiConfig(job);
 
         final String engine = BuildInfo.getVersionString();
         final JsonObject build = GrimoireSim.readBuildInfo();
@@ -177,7 +177,8 @@ public final class GrimoireDuel {
         final JsonObject meta = new JsonObject();
         meta.addProperty("engine", engine);
         meta.addProperty("engineCommit", engineCommit);
-        meta.addProperty("aiVersion", GrimoireSim.AI_VERSION);
+        meta.addProperty("aiVersion", aiConfig.version());
+        meta.add("aiSearch", aiConfig.metadata());
         meta.addProperty("aiProfile", profile.isEmpty() ? "Default" : profile);
         meta.addProperty("cardDb", StaticData.instance().getCommonCards().getUniqueCards().size() + " cartas");
         final String format = str(job, "format", "constructed");
@@ -239,6 +240,7 @@ public final class GrimoireDuel {
         players.add(rpAi);
         final Match match = new Match(rules, players, "Grimoire duel " + session.sessionId);
         final Game game = match.createGame();
+        aiConfig.apply(game);
 
         Player hp = null;
         for (Player p : game.getPlayers()) {

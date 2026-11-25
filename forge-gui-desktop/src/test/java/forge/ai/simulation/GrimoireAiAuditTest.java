@@ -21,7 +21,7 @@ import forge.game.phase.PhaseType;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
 
-/** Audit regressions: expected failures document defects in db53339; never a production patch. */
+/** Regression fixtures from the db53339 audit, now required to pass with Strands v2. */
 public class GrimoireAiAuditTest extends FlatMcTestBase {
     private final List<Map<String, Object>> observations = new ArrayList<>();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -35,7 +35,7 @@ public class GrimoireAiAuditTest extends FlatMcTestBase {
     }
     @AfterClass(alwaysRun = true) public void report() throws Exception {
         Path p = Path.of(System.getProperty("grimoire.audit.report", "/tmp/grimoire-ai-audit.json"));
-        Files.createDirectories(p.getParent()); Files.writeString(p, GSON.toJson(Map.of("engineCommit", "db53339b7493547eee5c94f2c2865feb5bf24b6a", "cases", observations)));
+        Files.createDirectories(p.getParent()); Files.writeString(p, GSON.toJson(Map.of("aiVersion", PrismaticStrandsAi.VERSION, "cases", observations)));
     }
     @Test public void countsOneCreatureSavedOnceAcrossSameColorBlockers() {
         Combat c = combat(true); Card attacker = creature("Craw Wurm", true);

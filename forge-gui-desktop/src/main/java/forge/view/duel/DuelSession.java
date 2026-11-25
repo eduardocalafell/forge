@@ -685,6 +685,7 @@ public final class DuelSession {
         if (g == null || me == null) {
             return s;
         }
+        s.add("aiSearchStats", forge.view.GrimoireAiConfig.statistics(g));
         final GameView gv = g.getView();
         final JsonObject gameO = new JsonObject();
         gameO.addProperty("turn", gv.getTurn());

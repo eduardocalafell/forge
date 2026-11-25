@@ -29,7 +29,7 @@ import forge.game.zone.ZoneType;
  * color of your choice would deal this turn"; flashback: virar uma criatura branca desvirada).
  *
  * <p>Uma única avaliação ({@link #evaluate}) alimenta as duas decisões, para que o momento de conjurar
- * e a cor escolhida considerem o mesmo cenário: {@code ChooseColorAi} (conjurar ou esperar) e
+ * e a cor escolhida reavaliem o estado público atual: {@code ChooseColorAi} (conjurar ou esperar) e
  * {@code ComputerUtilCard.chooseColor} (cor na resolução). Usa só informação pública: atacantes,
  * bloqueadores, pilha, campo e vida. Reaproveita as previsões do motor ({@link ComputerUtilCombat},
  * {@link ComputerUtil#predictThreatenedObjects}). Não altera as regras da carta.</p>
@@ -44,7 +44,7 @@ import forge.game.zone.ZoneType;
  * cor mais presente no deck adversário).</p>
  */
 public final class PrismaticStrandsAi {
-    public static final String VERSION = "prismatic-strands/v1";
+    public static final String VERSION = "prismatic-strands/v2";
     public static final String LOGIC = "PrismaticStrands";
 
     /** Destino opcional do trace de decisões (o adaptador do Grimoire grava em arquivo por partida). */
@@ -54,7 +54,15 @@ public final class PrismaticStrandsAi {
     private PrismaticStrandsAi() { }
 
     public static boolean isBaseline() {
-        return "baseline".equalsIgnoreCase(System.getProperty("grimoire.ai.prismaticStrands", "v1"));
+        return "baseline".equalsIgnoreCase(variant());
+    }
+
+    public static String variant() {
+        return System.getProperty("grimoire.ai.prismaticStrands", "v2");
+    }
+
+    public static String version() {
+        return "prismatic-strands/" + variant();
     }
 
     /**
@@ -74,6 +82,7 @@ public final class PrismaticStrandsAi {
     public static final class ColorEval {
         public final String color;
         public int lifeSaved;
+        public int poisonSaved;
         public int creaturesSaved;
         public int creatureValueSaved;
         public int ownDamageLost;
@@ -91,6 +100,7 @@ public final class PrismaticStrandsAi {
         Map<String, Object> toMap() {
             final Map<String, Object> m = new LinkedHashMap<>();
             m.put("lifeSaved", lifeSaved);
+            m.put("poisonSaved", poisonSaved);
             m.put("creaturesSaved", creaturesSaved);
             m.put("creatureValueSaved", creatureValueSaved);
             m.put("ownDamageLost", ownDamageLost);
@@ -140,11 +150,12 @@ public final class PrismaticStrandsAi {
         }
         markAlreadyPrevented(game, plan);
 
-        boolean stackThreat = evaluateStack(ai, sa, plan);
+        final boolean legacy = "v1".equals(variant());
+        boolean stackThreat = legacy ? evaluateStackV1(ai, sa, plan) : evaluateStack(ai, sa, plan);
         boolean combatSeen = false;
         if (combat != null && !ph.getPhase().isAfter(PhaseType.COMBAT_DAMAGE)
                 && ph.getPhase().isAfter(PhaseType.COMBAT_BEGIN)) {
-            combatSeen = evaluateCombat(ai, combat, plan);
+            combatSeen = legacy ? evaluateCombatV1(ai, combat, plan) : PrismaticStrandsCombat.evaluate(ai, combat, plan);
         }
 
         // Pontuação por cor
@@ -155,7 +166,7 @@ public final class PrismaticStrandsAi {
                 e.score = Integer.MIN_VALUE / 2;
                 continue;
             }
-            int s = e.lifeSaved * lifeWeight + e.creatureValueSaved - e.ownValueLost - e.ownDamageLost * 15;
+            int s = e.lifeSaved * lifeWeight + e.poisonSaved * 40 + e.creatureValueSaved - e.ownValueLost - e.ownDamageLost * 15;
             if (e.preventsLethal) {
                 s += 10000;
             }
@@ -231,7 +242,7 @@ public final class PrismaticStrandsAi {
         return !firstStrikeDone || c.hasDoubleStrike() || !c.hasFirstStrike();
     }
 
-    private static boolean evaluateCombat(final Player ai, final Combat combat, final Plan plan) {
+    private static boolean evaluateCombatV1(final Player ai, final Combat combat, final Plan plan) {
         final Game game = ai.getGame();
         final PhaseHandler ph = game.getPhaseHandler();
         final boolean defending = ph.getPlayerTurn().isOpponentOf(ai);
@@ -387,7 +398,7 @@ public final class PrismaticStrandsAi {
     /* --------------------------------------------------------------------------------------- pilha */
 
     /** Dano na pilha vindo de fonte adversária (só o objeto do topo, como no restante da IA). */
-    private static boolean evaluateStack(final Player ai, final SpellAbility sa, final Plan plan) {
+    private static boolean evaluateStackV1(final Player ai, final SpellAbility sa, final Plan plan) {
         final Game game = ai.getGame();
         if (game.getStack().isEmpty()) {
             return false;
@@ -460,6 +471,94 @@ public final class PrismaticStrandsAi {
             }
         }
         return true;
+    }
+
+    /** At resolution Strands is still on top; inspect the pending spell below it, not Strands itself. */
+    private static boolean evaluateStack(final Player ai, final SpellAbility sa, final Plan plan) {
+        final Game game = ai.getGame();
+        final SpellAbility resolving = game.getStack().getResolvingAbility();
+        final boolean choosing = resolving != null && resolving.getHostCard().equals(sa.getHostCard());
+        for (SpellAbilityStackInstance entry : game.getStack()) {
+            final SpellAbility pending = entry.getSpellAbility();
+            if (choosing && pending.getHostCard().equals(sa.getHostCard())) {
+                continue;
+            }
+            if (pending.getActivatingPlayer() == null || !pending.getActivatingPlayer().isOpponentOf(ai)) {
+                return false;
+            }
+            final Card source = pending.getHostCard();
+            boolean found = false;
+            int life = 0;
+            int poison = 0;
+            final java.util.Set<Card> threatened = new java.util.LinkedHashSet<>();
+            for (SpellAbility ab = pending; ab != null; ab = ab.getSubAbility()) {
+                if ((ab.getApi() != ApiType.DealDamage && ab.getApi() != ApiType.DamageAll) || !ab.hasParam("NumDmg")) {
+                    continue;
+                }
+                final int amount = AbilityUtils.calculateAmount(source, ab.getParam("NumDmg"), ab);
+                boolean hitsMe = false;
+                if (ab.usesTargeting()) {
+                    for (Player target : ab.getTargets().getTargetPlayers()) hitsMe |= target.equals(ai);
+                }
+                if (ab.getApi() == ApiType.DamageAll && ab.hasParam("ValidPlayers")) {
+                    hitsMe |= ai.isValid(ab.getParam("ValidPlayers").split(","), source.getController(), source, ab);
+                }
+                if (ab.hasParam("Defined")) {
+                    hitsMe |= AbilityUtils.getDefinedPlayers(source, ab.getParam("Defined"), ab).contains(ai);
+                }
+                if (hitsMe) {
+                    final int damage = ComputerUtilCombat.predictDamageTo(ai, amount, source, false);
+                    if (source.isInfectDamage(ai)) {
+                        if (ai.canReceiveCounters(forge.game.card.CounterEnumType.POISON)) poison += damage;
+                    } else if (ai.canLoseLife()) {
+                        life += damage;
+                    }
+                    found = true;
+                }
+                // Existing Forge predictor handles protection, damage already marked and valid target restrictions.
+                // It reads the top of the stack, so only use it while pending really is the top object.
+                if (entry == game.getStack().peek()) {
+                    for (GameObject object : ComputerUtil.predictThreatenedObjects(ai, sa, true)) {
+                        if (object instanceof Card card && card.getController().equals(ai) && card.isCreature()) {
+                            threatened.add(card);
+                        }
+                    }
+                } else if (ab.usesTargeting()) {
+                    for (Card card : ab.getTargets().getTargetCards()) {
+                        if (card.getController().equals(ai) && card.isCreature() && card.canBeDestroyed()
+                                && ComputerUtilCombat.predictDamageTo(card, amount, source, false) >= card.getLethalDamage()) {
+                            threatened.add(card);
+                        }
+                    }
+                }
+                if (ab.getApi() == ApiType.DamageAll && ab.hasParam("ValidCards")) {
+                    for (Card card : ai.getCreaturesInPlay()) {
+                        if (card.isValid(ab.getParam("ValidCards").split(","), source.getController(), source, ab)
+                                && card.canBeDestroyed() && ComputerUtilCombat.predictDamageTo(card, amount, source, false) >= card.getLethalDamage()) {
+                            threatened.add(card);
+                        }
+                    }
+                }
+            }
+            if (!found && threatened.isEmpty()) return false;
+            plan.threats.add(source.getName() + " na pilha");
+            if (!source.canDamagePrevented(false)) return true;
+            for (ColorEval e : plan.byColor.values()) {
+                if (!source.getColor().hasAnyColor(MagicColor.fromName(e.color))) continue;
+                e.sources.add(source.getName());
+                e.lifeSaved += life;
+                e.poisonSaved += poison;
+                e.preventsLethal = life >= ai.getLife() && !ai.cantLoseForZeroOrLessLife()
+                        || poison > 0 && poison + ai.getPoisonCounters() >= game.getRules().getPoisonCountersToLose()
+                        && !ai.cantLoseCheck(forge.game.player.GameLossReason.Poisoned);
+                for (Card card : threatened) {
+                    e.creaturesSaved++;
+                    e.creatureValueSaved += ComputerUtilCard.evaluateCreature(card);
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     /* ---------------------------------------------------------------------------- custo de conjurar */
@@ -542,7 +641,9 @@ public final class PrismaticStrandsAi {
             return;
         }
         final Game game = ai.getGame();
-        final String key = kind + "|" + game.getPhaseHandler().getTurn() + "|" + game.getPhaseHandler().getPhase() + "|" + plan.cast + "|" + plan.color + "|" + game.getStack().size();
+        final String key = System.identityHashCode(game) + "|" + kind + "|" + sa.getHostCard().getId() + "|"
+                + game.getPhaseHandler().getTurn() + "|" + game.getPhaseHandler().getPhase() + "|" + plan.cast + "|" + plan.color
+                + "|" + game.getStack().size() + "|" + ai.getLife() + "|" + plan.best().score;
         if ("consider".equals(kind) && "no_threat".equals(plan.situation)) {
             return; // sem dano em jogo: nada a explicar, e seriam milhares de linhas por partida
         }
@@ -551,7 +652,7 @@ public final class PrismaticStrandsAi {
         }
         lastTraceKey = key;
         final Map<String, Object> m = new LinkedHashMap<>();
-        m.put("ai", VERSION);
+        m.put("ai", version());
         m.put("card", "Prismatic Strands");
         m.put("cardInstanceId", sa.getHostCard() == null ? null : sa.getHostCard().getId());
         m.put("kind", kind);
