@@ -91,8 +91,9 @@ public final class DuelSession {
     private int rejectSeq;
 
     // paradas de fase (onde o humano recebe prioridade com a pilha vazia)
-    private final EnumSet<PhaseType> stopsYou = EnumSet.of(PhaseType.MAIN1, PhaseType.COMBAT_DECLARE_BLOCKERS, PhaseType.MAIN2);
-    private final EnumSet<PhaseType> stopsOpp = EnumSet.of(PhaseType.COMBAT_DECLARE_ATTACKERS, PhaseType.END_OF_TURN);
+    // (criadas em attach: PhaseType só pode ser carregado depois do FModel, por causa do Localizer)
+    private EnumSet<PhaseType> stopsYou;
+    private EnumSet<PhaseType> stopsOpp;
 
     // eventos
     private final ArrayDeque<JsonObject> events = new ArrayDeque<>();
@@ -124,6 +125,8 @@ public final class DuelSession {
             hc = hc0;
             humanView = human0.getView();
             humanSide = humanSide0;
+            stopsYou = EnumSet.of(PhaseType.MAIN1, PhaseType.COMBAT_DECLARE_BLOCKERS, PhaseType.MAIN2);
+            stopsOpp = EnumSet.of(PhaseType.COMBAT_DECLARE_ATTACKERS, PhaseType.END_OF_TURN);
             status = "running";
             gameStartedAt = System.currentTimeMillis();
             bumpLocked();
@@ -374,6 +377,9 @@ public final class DuelSession {
 
     boolean isUiSetToSkipPhase(final PlayerView turn, final PhaseType phase) {
         synchronized (lock) {
+            if (stopsYou == null) {
+                return false;
+            }
             final boolean mine = humanView != null && turn != null && turn.getId() == humanView.getId();
             return !(mine ? stopsYou : stopsOpp).contains(phase);
         }
@@ -703,10 +709,12 @@ public final class DuelSession {
             if (lastReject != null) {
                 s.add("reject", lastReject);
             }
-            final JsonObject stops = new JsonObject();
-            stops.add("you", phases(stopsYou));
-            stops.add("opp", phases(stopsOpp));
-            s.add("stops", stops);
+            if (stopsYou != null) {
+                final JsonObject stops = new JsonObject();
+                stops.add("you", phases(stopsYou));
+                stops.add("opp", phases(stopsOpp));
+                s.add("stops", stops);
+            }
             s.addProperty("waitingFor", "running".equals(status) ? (waitingForHumanLocked() ? "human" : "ai") : null);
             s.addProperty("autoPass", hc != null && hc.mayAutoPass());
         }
@@ -944,6 +952,9 @@ public final class DuelSession {
 
     private JsonObject setStops(final JsonObject cmd) {
         synchronized (lock) {
+            if (stopsYou == null) {
+                return reject("not_running", "A partida ainda não começou.");
+            }
             for (String side : new String[] {"you", "opp"}) {
                 if (!cmd.has(side)) {
                     continue;
