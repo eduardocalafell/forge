@@ -28,7 +28,17 @@ import forge.game.spellability.StackItemView;
 import forge.game.zone.ZoneType;
 import forge.gamemodes.match.Selection;
 import forge.gamemodes.match.input.Input;
+import forge.gamemodes.match.input.InputAttack;
+import forge.gamemodes.match.input.InputBlock;
+import forge.gamemodes.match.input.InputConfirm;
+import forge.gamemodes.match.input.InputConfirmMulligan;
 import forge.gamemodes.match.input.InputLockUI;
+import forge.gamemodes.match.input.InputLondonMulligan;
+import forge.gamemodes.match.input.InputPassPriority;
+import forge.gamemodes.match.input.InputPayMana;
+import forge.gamemodes.match.input.InputSelectManyBase;
+import forge.gamemodes.match.input.InputSelectStackItems;
+import forge.gamemodes.match.input.InputSelectTargets;
 import forge.gui.FThreads;
 import forge.player.PlayerControllerHuman;
 import forge.trackable.TrackableObject;
@@ -863,7 +873,7 @@ public final class DuelSession {
     private JsonObject promptDto(final Input in, final PromptCopy pc) {
         final JsonObject o = new JsonObject();
         o.addProperty("id", "p" + pc.id);
-        o.addProperty("input", in.getClass().getSimpleName());
+        o.addProperty("input", inputName(in));
         o.addProperty("kind", inputKind(in));
         o.addProperty("message", pc.message);
         if (pc.card != null) {
@@ -893,25 +903,47 @@ public final class DuelSession {
         return o;
     }
 
+    /** Tipo do input pelo tipo Java (inputs anônimos herdam de uma destas classes). */
     static String inputKind(final Input in) {
-        final String n = in.getClass().getSimpleName();
-        switch (n) {
-            case "InputPassPriority": return "priority";
-            case "InputConfirmMulligan": return "mulligan";
-            case "InputLondonMulligan": return "mulliganBottom";
-            case "InputAttack": return "attack";
-            case "InputBlock": return "block";
-            case "InputSelectTargets": return "targets";
-            case "InputPayMana":
-            case "InputPayManaOfCostPayment": return "payMana";
-            case "InputConfirm": return "confirm";
-            case "InputSelectCardsFromList":
-            case "InputSelectEntitiesFromList":
-            case "InputSelectCardsForConvokeOrImprovise": return "select";
-            case "InputSelectStackItems": return "selectStack";
-            case "InputChooseStartingHand": return "startingHand";
-            default: return "other";
+        if (in instanceof InputPassPriority) {
+            return "priority";
         }
+        if (in instanceof InputConfirmMulligan) {
+            return "mulligan";
+        }
+        if (in instanceof InputLondonMulligan) {
+            return "mulliganBottom";
+        }
+        if (in instanceof InputAttack) {
+            return "attack";
+        }
+        if (in instanceof InputBlock) {
+            return "block";
+        }
+        if (in instanceof InputSelectTargets) {
+            return "targets";
+        }
+        if (in instanceof InputPayMana) {
+            return "payMana";
+        }
+        if (in instanceof InputConfirm) {
+            return "confirm";
+        }
+        if (in instanceof InputSelectStackItems) {
+            return "selectStack";
+        }
+        if (in instanceof InputSelectManyBase) {
+            return "select";
+        }
+        return "other";
+    }
+
+    static String inputName(final Input in) {
+        Class<?> c = in.getClass();
+        while (c.getSimpleName().isEmpty() && c.getSuperclass() != null) {
+            c = c.getSuperclass();
+        }
+        return c.getSimpleName();
     }
 
     private JsonArray ids(final List<CardView> cards) {
