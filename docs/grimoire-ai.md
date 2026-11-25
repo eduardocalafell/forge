@@ -1,4 +1,4 @@
-# Grimoire AI v4
+# Grimoire AI v5
 
 Both headless adapters (`GrimoireSim` and `GrimoireDuel`) use `GrimoireAiConfig` after `Match.createGame()`. They do not go through `HostedMatch`, which is why the desktop preference never enabled Flat Monte Carlo in the old adapters.
 
@@ -23,7 +23,7 @@ Both cards carried `AI:RemoveDeck:All`, which in this fork also removes a card f
 
 `GrimoireCardAuditTest` covers 13 scenarios in both search modes plus three discovery checks. Known limit: `evaluateCreature` does not value ETB effects, and the harness checks the chosen targets rather than resolved triggers. Inside Out was not audited.
 
-## Deck audit: cards that stayed in hand
+## v5: deck audit, cards that stayed in hand
 
 AI x AI games with the user's decks (Mono-White Aggro, Mono White Auras, Mono Green Energy padded with Forests) against a red midrange deck, eight games per search mode, count how often each card in hand was played. `GrimoireDeckAuditTest` reproduces the suspects:
 
