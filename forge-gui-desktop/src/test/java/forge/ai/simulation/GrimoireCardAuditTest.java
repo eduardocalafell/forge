@@ -244,6 +244,65 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
     }
 
 
+    /**
+     * Em partidas reais com busca limitada, o Tortured Existence recusado pela heurística voltava como "jogada descoberta"
+     * da busca: descartava Mulldrifter para recuperar Merfolk Looter, e depois um Looter por outro. A recusa auditada
+     * agora vale também para a descoberta.
+     */
+    private void expectNotDiscoverable(final String card) {
+        try {
+            final java.lang.reflect.Method legal = forge.ai.AiController.class.getDeclaredMethod("isLegalDiscovery", SpellAbility.class, forge.ai.AiPlayDecision.class);
+            legal.setAccessible(true);
+            int checked = 0;
+            for (Card c : game.getCardsInGame()) {
+                if (!c.getName().equals(card) || !c.getController().equals(ai)) continue;
+                for (SpellAbility sa : c.getAllSpellAbilities()) {
+                    sa.setActivatingPlayer(ai);
+                    final forge.ai.AiPlayDecision opinion = brain().canPlaySa(sa);
+                    sa.resetTargets();
+                    assertFalse(opinion.willingToPlay(), card + " deveria ser recusado pela heurística: " + opinion);
+                    assertEquals(legal.invoke(brain(), sa, opinion), false, card + " não pode voltar como jogada descoberta");
+                    checked++;
+                }
+            }
+            assertTrue(checked > 0, "nenhuma habilidade de " + card);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    @Test public void tortChurnNotDiscovered() {
+        mode(true);
+        swamps(3);
+        bf("Tortured Existence", true);
+        put("Merfolk Looter", ai, ZoneType.Hand);
+        put("Merfolk Looter", ai, ZoneType.Graveyard);
+        put("Swamp", 10, ai, ZoneType.Library);
+        at(PhaseType.MAIN2, ai);
+        expectNotDiscoverable("Tortured Existence");
+    }
+
+    @Test public void tortBadTradeNotDiscovered() {
+        mode(true);
+        swamps(3);
+        bf("Tortured Existence", true);
+        put("Mulldrifter", ai, ZoneType.Hand);
+        put("Merfolk Looter", ai, ZoneType.Graveyard);
+        put("Swamp", 10, ai, ZoneType.Library);
+        at(PhaseType.MAIN2, ai);
+        expectNotDiscoverable("Tortured Existence");
+    }
+
+    @Test public void flickerNoValueNotDiscovered() {
+        mode(true);
+        islands(3);
+        bf("Grizzly Bears", true);
+        bf("Grizzly Bears", true);
+        put("Ghostly Flicker", ai, ZoneType.Hand);
+        at(PhaseType.MAIN2, ai);
+        expectNotDiscoverable("Ghostly Flicker");
+    }
+
     @Test public void tortGoodTradeHeuristic() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", false, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Gurmag Angler"); }
     @Test public void tortGoodTradeBounded() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", true, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Gurmag Angler"); }
     @Test public void tortBadTradeHeuristic() { tortured("tortured-bad-trade", "não ativa (perderia o Angler pelo Bears)", false, List.of("Gurmag Angler"), List.of("Grizzly Bears"), 1, PhaseType.END_OF_TURN, false); expectPass(); }

@@ -3183,6 +3183,9 @@ public class AiController {
         if (GuardedAbilities.isNeverLogic(sa) && !GuardedAbilities.mayConsider(player, sa, true)) {
             return false; // the script says the AI never plays it, and nothing makes an exception
         }
+        if (!opinion.willingToPlay() && forge.ai.ability.ChangeZoneAi.auditedVetoIsFinal(sa)) {
+            return false; // Tortured Existence trading a creature for an equal one, Ghostly Flicker on a token: see GrimoireCardAuditTest
+        }
         // ChangeZoneAi rejects a hidden-origin activation when no eligible card is in hand.
         // Broad discovery must not add it back just because the activation cost itself is payable.
         // Stoneforge Mystic and the like (an eligible card is in hand, see isCheatFromHand) are the exception: the rollouts

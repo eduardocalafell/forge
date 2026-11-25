@@ -1378,6 +1378,27 @@ public class ChangeZoneAi extends SpellAbilityAi {
      * valuable remaining permanent. Tokens never go (they stay in exile), nor permanents carrying my auras, equipment
      * or +1/+1 counters, unless the spell is mandatory.
      */
+    /**
+     * Grimoire: plays whose "no" from the audited logic is final, also for Flat MC's discovered plays. The rollouts
+     * neither see the churn of trading a creature for an equal one (Tortured Existence) nor choose blink targets with
+     * the care of chooseMultiBlinkTargets (tokens, own auras and counters), so they may not override the heuristics here.
+     */
+    public static boolean auditedVetoIsFinal(final SpellAbility sa) {
+        if (sa == null || sa.getApi() != ApiType.ChangeZone) {
+            return false;
+        }
+        if ("TradeUp".equals(sa.getParam("AILogic"))) {
+            return true;
+        }
+        if (!sa.usesTargeting() || sa.getMinTargets() <= 1 || !"Exile".equals(sa.getParam("Destination"))
+                || !"Battlefield".equals(sa.getParam("Origin"))) {
+            return false;
+        }
+        final AbilitySub sub = sa.getSubAbility();
+        return "DelayedBlink".equals(sa.getParam("AILogic")) || (sub != null && (sub.getApi() == ApiType.DelayedTrigger
+                || (sub.getApi() == ApiType.ChangeZone && "Remembered".equals(sub.getParam("Defined")))));
+    }
+
     private static boolean chooseMultiBlinkTargets(final Player ai, final SpellAbility sa, final CardCollection list,
                                                    final boolean immediately, final boolean mandatory) {
         final Game game = ai.getGame();
