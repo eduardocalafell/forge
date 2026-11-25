@@ -76,7 +76,6 @@ final class Views {
         o.addProperty("attacking", c.isAttacking());
         o.addProperty("blocking", c.isBlocking());
         o.addProperty("phasedOut", c.isPhasedOut());
-        o.addProperty("transformed", c.isTransformed());
         o.addProperty("damage", c.getDamage());
         o.addProperty("manaCost", st.getManaCost() == null ? "" : st.getManaCost().toString());
         o.addProperty("type", st.getType() == null ? "" : st.getType().toString());
