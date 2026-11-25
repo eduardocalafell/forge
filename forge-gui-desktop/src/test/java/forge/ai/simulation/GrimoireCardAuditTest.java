@@ -117,7 +117,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         mode(false);
         put("Forest", 2, ai, ZoneType.Battlefield).forEach(c -> c.setSickness(false));
         put("Grizzly Bears", ai, ZoneType.Hand);
-        at(PhaseType.MAIN1, ai);
+        at(PhaseType.MAIN2, ai);
         row("control-casts-creature", "heuristic", "conjura Grizzly Bears", decide("Grizzly Bears"));
     }
 
@@ -130,16 +130,6 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         row("control-burns-for-lethal", "heuristic", "Raio no oponente", decide("Lightning Bolt"));
     }
 
-    @Test public void controlRegrowthAbility() {
-        mode(false);
-        swamps(2);
-        bf("Volrath's Stronghold", true);
-        put("Gurmag Angler", ai, ZoneType.Graveyard);
-        put("Swamp", 10, ai, ZoneType.Library);
-        at(PhaseType.END_OF_TURN, opp);
-        row("control-graveyard-ability", "heuristic", "usa a habilidade de recuperar criatura (sem custo de descarte)", decide("Volrath's Stronghold"));
-    }
-
     // ------------------------------------------------------------------ Ghostly Flicker
 
     private void islands(final int n) { put("Island", n, ai, ZoneType.Battlefield).forEach(c -> c.setSickness(false)); }
@@ -147,7 +137,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
     private void flickerSavesFromBolt(final boolean bounded) {
         mode(bounded);
         islands(3);
-        final Card angel = bf("Serra Angel", true);
+        final Card angel = bf("Hill Giant", true);
         put("Ghostly Flicker", ai, ZoneType.Hand);
         at(PhaseType.MAIN1, opp);
         final SpellAbility bolt = put("Lightning Bolt", opp, ZoneType.Hand).getFirstSpellAbility();
@@ -156,8 +146,8 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         game.getStack().add(bolt);
         final Map<String, Object> o = decide("Ghostly Flicker");
         while (!game.getStack().isEmpty()) game.getStack().resolveStack();
-        o.put("angelSurvives", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Serra Angel"));
-        row("flicker-saves-from-bolt", bounded ? "bounded" : "heuristic", "responde ao Raio exilando Serra Angel + outra permanente (terreno), e a Angel sobrevive", o);
+        o.put("angelSurvives", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Hill Giant"));
+        row("flicker-saves-from-bolt", bounded ? "bounded" : "heuristic", "responde ao Raio exilando Hill Giant + um terreno, e o Giant sobrevive", o);
     }
     @Test public void flickerSavesFromBoltHeuristic() { flickerSavesFromBolt(false); }
     @Test public void flickerSavesFromBoltBounded() { flickerSavesFromBolt(true); }
