@@ -13,6 +13,7 @@ import com.google.gson.JsonObject;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+import static org.testng.Assert.*;
 
 import forge.ai.PlayerControllerAi;
 import forge.game.GameObject;
@@ -23,10 +24,11 @@ import forge.game.zone.ZoneType;
 import forge.view.GrimoireAiConfig;
 
 /**
- * Auditoria de cartas marcadas com AI:RemoveDeck:All (Ghostly Flicker, Tortured Existence).
- * Primeiro observa: cada cenário roda nos dois modos (heurístico e busca limitada) e grava o que a IA
- * escolheu de fato em /tmp/grimoire-card-audit.json. As expectativas só viram asserções depois de
- * confirmado o defeito e corrigido o comportamento.
+ * Auditoria de cartas que tinham AI:RemoveDeck:All (Ghostly Flicker, Tortured Existence). Cada cenário roda nos
+ * dois modos (heurístico e busca limitada), grava o que a IA escolheu de fato em /tmp/grimoire-card-audit.json e
+ * confere o comportamento corrigido. Antes da correção as duas cartas nunca eram jogadas: o filtro de cartas
+ * RemoveDeck as tirava da lista no modo heurístico, a lógica de "piscar" só rodava com um alvo (o Flicker exige
+ * dois) e o custo de descartar criatura não tinha preferência de descarte.
  */
 public class GrimoireCardAuditTest extends FlatMcTestBase {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -101,7 +103,10 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         return out;
     }
 
+    private Map<String, Object> last;
+
     private void row(final String scenario, final String mode, final String expectation, final Map<String, Object> observed) {
+        last = observed;
         final Map<String, Object> r = new LinkedHashMap<>();
         r.put("scenario", scenario);
         r.put("mode", mode);
@@ -119,6 +124,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         put("Grizzly Bears", ai, ZoneType.Hand);
         at(PhaseType.MAIN2, ai);
         row("control-casts-creature", "heuristic", "conjura Grizzly Bears", decide("Grizzly Bears"));
+        assertEquals(last.get("usesCard"), true, "controle: o arnês deixa a IA jogar uma criatura");
     }
 
     @Test public void controlBurnsForLethal() {
@@ -128,6 +134,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         put("Lightning Bolt", ai, ZoneType.Hand);
         at(PhaseType.MAIN1, ai);
         row("control-burns-for-lethal", "heuristic", "Raio no oponente", decide("Lightning Bolt"));
+        assertEquals(last.get("usesCard"), true, "controle: Raio letal");
     }
 
     // ------------------------------------------------------------------ Ghostly Flicker
@@ -148,6 +155,9 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         while (!game.getStack().isEmpty()) game.getStack().resolveStack();
         o.put("angelSurvives", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Hill Giant"));
         row("flicker-saves-from-bolt", bounded ? "bounded" : "heuristic", "responde ao Raio exilando Hill Giant + um terreno, e o Giant sobrevive", o);
+        assertEquals(o.get("usesCard"), true, "Ghostly Flicker responde à remoção");
+        assertTrue(String.valueOf(o.get("choice")).contains("Hill Giant") && String.valueOf(o.get("choice")).contains("Island"), String.valueOf(o.get("choice")));
+        assertEquals(o.get("angelSurvives"), true, "o alvo do Raio sobrevive");
     }
     @Test public void flickerSavesFromBoltHeuristic() { flickerSavesFromBolt(false); }
     @Test public void flickerSavesFromBoltBounded() { flickerSavesFromBolt(true); }
@@ -162,6 +172,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         put("Ghostly Flicker", ai, ZoneType.Hand);
         at(PhaseType.MAIN2, ai);
         row("flicker-etb-value", bounded ? "bounded" : "heuristic", "pisca Man-o'-War + Elvish Visionary (devolve o Craw Wurm e compra 1)", decide("Ghostly Flicker"));
+        assertEquals(last.get("choice"), "Ghostly Flicker -> [Man-o'-War#5, Elvish Visionary#6]".replace("#5", "#" + idOf("Man-o'-War")).replace("#6", "#" + idOf("Elvish Visionary")));
     }
     @Test public void flickerEtbValueHeuristic() { flickerEtbValue(false); }
     @Test public void flickerEtbValueBounded() { flickerEtbValue(true); }
@@ -174,6 +185,7 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         put("Ghostly Flicker", ai, ZoneType.Hand);
         at(PhaseType.MAIN2, ai);
         row("flicker-no-value", bounded ? "bounded" : "heuristic", "não conjura (nada a ganhar)", decide("Ghostly Flicker"));
+        assertEquals(last.get("usesCard"), false, "sem ameaça nem efeito de entrada, não gasta a carta");
     }
     @Test public void flickerNoValueHeuristic() { flickerNoValue(false); }
     @Test public void flickerNoValueBounded() { flickerNoValue(true); }
@@ -196,6 +208,8 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         o.put("bearsSurvive", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Grizzly Bears"));
         o.put("tokenSurvives", names(ai.getCardsIn(ZoneType.Battlefield)).contains("Grizzly Bears(token)"));
         row("flicker-avoids-token", bounded ? "bounded" : "heuristic", "se conjurar para salvar os Bears, o segundo alvo é um terreno, nunca a ficha", o);
+        assertEquals(o.get("tokenSurvives"), true, "a ficha nunca vai para o exílio");
+        assertEquals(o.get("bearsSurvive"), true, "os Bears ameaçados são salvos");
     }
     @Test public void flickerAvoidsTokenHeuristic() { flickerAvoidsToken(false); }
     @Test public void flickerAvoidsTokenBounded() { flickerAvoidsToken(true); }
@@ -212,16 +226,34 @@ public class GrimoireCardAuditTest extends FlatMcTestBase {
         for (String g : graveyard) put(g, ai, ZoneType.Graveyard);
         put("Swamp", 10, ai, ZoneType.Library);
         at(phase, ownTurn ? ai : opp);
-        row(scenario, bounded ? "bounded" : "heuristic", expectation, decide("Tortured Existence"));
+        final Map<String, Object> o = decide("Tortured Existence");
+        row(scenario, bounded ? "bounded" : "heuristic", expectation, o);
     }
 
-    @Test public void tortGoodTradeHeuristic() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", false, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); }
-    @Test public void tortGoodTradeBounded() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", true, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); }
-    @Test public void tortBadTradeHeuristic() { tortured("tortured-bad-trade", "não ativa (perderia o Angler pelo Bears)", false, List.of("Gurmag Angler"), List.of("Grizzly Bears"), 1, PhaseType.END_OF_TURN, false); }
-    @Test public void tortBadTradeBounded() { tortured("tortured-bad-trade", "não ativa (perderia o Angler pelo Bears)", true, List.of("Gurmag Angler"), List.of("Grizzly Bears"), 1, PhaseType.END_OF_TURN, false); }
-    @Test public void tortChurnHeuristic() { tortured("tortured-churn", "não ativa (troca idêntica, só gasta mana)", false, List.of("Grizzly Bears"), List.of("Grizzly Bears"), 3, PhaseType.MAIN2, true); }
-    @Test public void tortChurnBounded() { tortured("tortured-churn", "não ativa (troca idêntica, só gasta mana)", true, List.of("Grizzly Bears"), List.of("Grizzly Bears"), 3, PhaseType.MAIN2, true); }
-    @Test public void tortBestPairHeuristic() { tortured("tortured-best-pair", "descarta Grizzly Bears (pior da mão) e recupera Ravenous Chupacabra (melhor do cemitério ao alcance da mana)", false, List.of("Grizzly Bears", "Hill Giant"), List.of("Ravenous Chupacabra", "Elvish Warrior"), 4, PhaseType.END_OF_TURN, false); }
-    @Test public void tortBestPairBounded() { tortured("tortured-best-pair", "descarta Grizzly Bears (pior da mão) e recupera Ravenous Chupacabra (melhor do cemitério ao alcance da mana)", true, List.of("Grizzly Bears", "Hill Giant"), List.of("Ravenous Chupacabra", "Elvish Warrior"), 4, PhaseType.END_OF_TURN, false); }
-    @Test public void tortSmallGainHeuristic() { tortured("tortured-small-gain", "não ativa (Elvish Warrior quase igual ao Bears não paga a mana nem a carta)", false, List.of("Grizzly Bears"), List.of("Elvish Warrior"), 1, PhaseType.END_OF_TURN, false); }
+    private void expectTrade(final String discarded, final String returned) {
+        assertEquals(last.get("usesCard"), true, "ativa Tortured Existence");
+        @SuppressWarnings("unchecked") final List<String> hand = (List<String>) last.get("handAfter");
+        @SuppressWarnings("unchecked") final List<String> gy = (List<String>) last.get("graveyardAfter");
+        assertTrue(hand.contains(returned), "volta " + returned + ": " + hand);
+        assertTrue(gy.contains(discarded), "descarta " + discarded + ": " + gy);
+    }
+
+    private void expectPass() {
+        assertEquals(last.get("usesCard"), false, "não ativa: " + last.get("choice"));
+    }
+
+    private int idOf(final String name) {
+        for (Card c : ai.getCardsIn(ZoneType.Battlefield)) if (c.getName().equals(name)) return c.getId();
+        return -1;
+    }
+
+    @Test public void tortGoodTradeHeuristic() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", false, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Gurmag Angler"); }
+    @Test public void tortGoodTradeBounded() { tortured("tortured-good-trade", "descarta Grizzly Bears e recupera Gurmag Angler", true, List.of("Grizzly Bears"), List.of("Gurmag Angler"), 1, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Gurmag Angler"); }
+    @Test public void tortBadTradeHeuristic() { tortured("tortured-bad-trade", "não ativa (perderia o Angler pelo Bears)", false, List.of("Gurmag Angler"), List.of("Grizzly Bears"), 1, PhaseType.END_OF_TURN, false); expectPass(); }
+    @Test public void tortBadTradeBounded() { tortured("tortured-bad-trade", "não ativa (perderia o Angler pelo Bears)", true, List.of("Gurmag Angler"), List.of("Grizzly Bears"), 1, PhaseType.END_OF_TURN, false); expectPass(); }
+    @Test public void tortChurnHeuristic() { tortured("tortured-churn", "não ativa (troca idêntica, só gasta mana)", false, List.of("Grizzly Bears"), List.of("Grizzly Bears"), 3, PhaseType.MAIN2, true); expectPass(); }
+    @Test public void tortChurnBounded() { tortured("tortured-churn", "não ativa (troca idêntica, só gasta mana)", true, List.of("Grizzly Bears"), List.of("Grizzly Bears"), 3, PhaseType.MAIN2, true); expectPass(); }
+    @Test public void tortBestPairHeuristic() { tortured("tortured-best-pair", "descarta Grizzly Bears (pior da mão) e recupera Serra Angel (melhor do cemitério ao alcance da mana)", false, List.of("Grizzly Bears", "Hill Giant"), List.of("Serra Angel", "Elvish Warrior"), 4, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Serra Angel"); }
+    @Test public void tortBestPairBounded() { tortured("tortured-best-pair", "descarta Grizzly Bears (pior da mão) e recupera Serra Angel (melhor do cemitério ao alcance da mana)", true, List.of("Grizzly Bears", "Hill Giant"), List.of("Serra Angel", "Elvish Warrior"), 4, PhaseType.END_OF_TURN, false); expectTrade("Grizzly Bears", "Serra Angel"); }
+    @Test public void tortSmallGainHeuristic() { tortured("tortured-small-gain", "não ativa (Elvish Warrior quase igual ao Bears não paga a mana nem a carta)", false, List.of("Grizzly Bears"), List.of("Elvish Warrior"), 1, PhaseType.END_OF_TURN, false); expectPass(); }
 }
