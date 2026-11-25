@@ -70,10 +70,12 @@ public final class DuelSession {
     private long tickAt = System.currentTimeMillis();
 
     // jogo
-    private Game game;
-    private Player human;
-    private PlayerControllerHuman hc;
-    private PlayerView humanView;
+    // Regra de concorrência: nada do Forge é chamado com `lock` na mão (o Forge chama esta classe
+    // segurando os próprios monitores, como Game e GameLog). Estes campos são escritos uma vez.
+    private volatile Game game;
+    private volatile Player human;
+    private volatile PlayerControllerHuman hc;
+    private volatile PlayerView humanView;
     private String humanSide;
 
     // pergunta / prompt
@@ -159,6 +161,7 @@ public final class DuelSession {
 
     /** Erro técnico ou pergunta não suportada: o jogo para aqui, sem escolha automática. */
     public void fail(final String code, final String message) {
+        final JsonObject facts = facts();
         synchronized (lock) {
             if (isFinalLocked()) {
                 return;
@@ -168,7 +171,7 @@ public final class DuelSession {
             error.addProperty("message", message);
             status = "error";
             if (result == null) {
-                result = baseResult("error");
+                result = baseResult("error", facts);
                 result.addProperty("reason", code);
             }
             bumpLocked();
@@ -178,24 +181,28 @@ public final class DuelSession {
 
     /** Fim normal do jogo, com o resultado do Forge. */
     public void gameFinished() {
+        final JsonObject facts = facts();
+        final forge.game.GameOutcome o = game == null ? null : game.getOutcome();
+        final boolean draw = o != null && o.isDraw();
+        final boolean won = o != null && !draw && o.isWinner(human.getRegisteredPlayer());
+        final String winCondition = o == null ? null : String.valueOf(o.getWinCondition());
         synchronized (lock) {
             if (isFinalLocked()) {
                 return;
             }
-            final forge.game.GameOutcome o = game == null ? null : game.getOutcome();
             if (o == null) {
                 error = new JsonObject();
                 error.addProperty("code", "no_outcome");
                 error.addProperty("message", "O Forge encerrou o jogo sem resultado.");
                 status = "error";
-                result = baseResult("error");
+                result = baseResult("error", facts);
                 result.addProperty("reason", "no_outcome");
             } else {
                 final String outcome;
                 String winner = null;
-                if (o.isDraw()) {
+                if (draw) {
                     outcome = "draw";
-                } else if (o.isWinner(human.getRegisteredPlayer())) {
+                } else if (won) {
                     outcome = "win";
                     winner = "human";
                 } else {
@@ -203,9 +210,9 @@ public final class DuelSession {
                     winner = "ai";
                 }
                 status = "over";
-                result = baseResult(outcome);
+                result = baseResult(outcome, facts);
                 result.addProperty("winner", winner);
-                result.addProperty("reason", String.valueOf(o.getWinCondition()));
+                result.addProperty("reason", winCondition);
             }
             bumpLocked();
         }
@@ -215,25 +222,45 @@ public final class DuelSession {
 
     /** Sessão expirada (inatividade, tempo máximo ou abandono): resultado próprio, nunca derrota técnica. */
     public void expire(final String reason) {
+        final JsonObject facts = facts();
         synchronized (lock) {
             if (isFinalLocked()) {
                 return;
             }
             status = "expired";
             statusDetail = reason;
-            result = baseResult("inactivity".equals(reason) ? "inactivity" : "expired");
+            result = baseResult("inactivity".equals(reason) ? "inactivity" : "expired", facts);
             result.addProperty("reason", reason);
             bumpLocked();
         }
         abortPending("expirada");
     }
 
-    private JsonObject baseResult(final String outcome) {
+    /** Fatos lidos do Forge (fora do lock). */
+    private JsonObject facts() {
+        final JsonObject f = new JsonObject();
+        final Game g = game;
+        int turns = 0;
+        String first = null;
+        try {
+            if (g != null) {
+                turns = g.getView().getTurn();
+                final Player starter = g.getStartingPlayer();
+                first = starter == null ? null : starter == human ? "human" : "ai";
+            }
+        } catch (RuntimeException ignored) {
+            // só informativo
+        }
+        f.addProperty("turns", turns);
+        f.addProperty("first", first);
+        return f;
+    }
+
+    private JsonObject baseResult(final String outcome, final JsonObject facts) {
         final JsonObject r = new JsonObject();
         r.addProperty("outcome", outcome);
-        r.addProperty("turns", game == null || game.getPhaseHandler() == null ? 0 : game.getPhaseHandler().getTurn());
-        final Player starter = game == null ? null : game.getStartingPlayer();
-        r.addProperty("first", starter == null ? null : starter == human ? "human" : "ai");
+        r.add("turns", facts.get("turns"));
+        r.add("first", facts.get("first"));
         r.addProperty("durationMs", gameStartedAt == 0 ? 0 : System.currentTimeMillis() - gameStartedAt);
         r.addProperty("humanWaitMs", humanWaitMs);
         r.addProperty("engineMs", otherMs);
@@ -272,6 +299,7 @@ public final class DuelSession {
 
     /** Amostragem periódica: separa o tempo esperando o humano do tempo do motor/IA. */
     public long tick() {
+        final boolean input = humanInputActive();
         synchronized (lock) {
             final long now = System.currentTimeMillis();
             final long dt = now - tickAt;
@@ -280,7 +308,7 @@ public final class DuelSession {
                 waitingSince = -1;
                 return 0;
             }
-            if (waitingForHumanLocked()) {
+            if (pending != null || input) {
                 humanWaitMs += dt;
                 if (waitingSince < 0) {
                     waitingSince = now;
@@ -293,16 +321,15 @@ public final class DuelSession {
         }
     }
 
-    private boolean waitingForHumanLocked() {
-        if (pending != null) {
-            return true;
-        }
+    /** Sem lock: lê a fila de inputs do Forge. */
+    private boolean humanInputActive() {
         final Input in = currentInput();
         return in != null && !(in instanceof InputLockUI);
     }
 
     private Input currentInput() {
-        if (hc == null || game == null || game.isGameOver()) {
+        final Game g = game;
+        if (hc == null || g == null || g.getView().isGameOver()) {
             return null;
         }
         try {
@@ -376,21 +403,24 @@ public final class DuelSession {
     }
 
     boolean isUiSetToSkipPhase(final PlayerView turn, final PhaseType phase) {
+        final boolean stop;
         synchronized (lock) {
             if (stopsYou == null) {
                 return false;
             }
             final boolean mine = humanView != null && turn != null && turn.getId() == humanView.getId();
-            if (!(mine ? stopsYou : stopsOpp).contains(phase)) {
-                return true;
-            }
-            // paradas de combate só valem quando há combate de fato
-            if (phase == PhaseType.COMBAT_DECLARE_ATTACKERS || phase == PhaseType.COMBAT_DECLARE_BLOCKERS) {
-                final CombatView cv = game == null ? null : game.getView().getCombat();
-                return cv == null || cv.getNumAttackers() == 0;
-            }
-            return false;
+            stop = (mine ? stopsYou : stopsOpp).contains(phase);
         }
+        if (!stop) {
+            return true;
+        }
+        // paradas de combate só valem quando há combate de fato
+        if (phase == PhaseType.COMBAT_DECLARE_ATTACKERS || phase == PhaseType.COMBAT_DECLARE_BLOCKERS) {
+            final Game g = game;
+            final CombatView cv = g == null ? null : g.getView().getCombat();
+            return cv == null || cv.getNumAttackers() == 0;
+        }
+        return false;
     }
 
     /* ------------------------------------------------------------ decisões bloqueantes */
@@ -433,12 +463,13 @@ public final class DuelSession {
     /* ------------------------------------------------------------ eventos */
 
     void addEvent(final JsonObject ev) {
+        final Game g = game;
+        if (g != null && !ev.has("turn")) {
+            ev.addProperty("turn", g.getView().getTurn());
+        }
         synchronized (lock) {
             seq++;
             ev.addProperty("seq", seq);
-            if (game != null && game.getPhaseHandler() != null) {
-                ev.addProperty("turn", game.getPhaseHandler().getTurn());
-            }
             events.addLast(ev);
             while (events.size() > MAX_EVENTS) {
                 events.removeFirst();
@@ -711,11 +742,29 @@ public final class DuelSession {
         }
         s.add("combat", combat);
 
+        // Forge primeiro (sem lock), depois cópia dos nossos campos (com lock), DTOs por último (sem lock)
+        final Input in = currentInput();
+        final boolean inputActive = in != null && !(in instanceof InputLockUI);
+        boolean autoPass = false;
+        try {
+            autoPass = hc != null && hc.mayAutoPass();
+        } catch (RuntimeException ignored) {
+            // informativo
+        }
+        final PromptCopy pc = new PromptCopy();
+        final Decision pend;
         synchronized (lock) {
-            s.add("prompt", promptLocked());
-            s.add("decision", pending == null || pending.isDone() ? null : decisionDto(pending));
+            pc.id = promptId;
+            pc.message = promptMessage;
+            pc.card = promptCard;
+            pc.okLabel = okLabel;
+            pc.cancelLabel = cancelLabel;
+            pc.okEnabled = okEnabled;
+            pc.cancelEnabled = cancelEnabled;
+            pc.selection = selection;
+            pend = pending == null || pending.isDone() ? null : pending;
             if (lastReject != null) {
-                s.add("reject", lastReject);
+                s.add("reject", lastReject.deepCopy());
             }
             if (stopsYou != null) {
                 final JsonObject stops = new JsonObject();
@@ -723,9 +772,11 @@ public final class DuelSession {
                 stops.add("opp", phases(stopsOpp));
                 s.add("stops", stops);
             }
-            s.addProperty("waitingFor", "running".equals(status) ? (waitingForHumanLocked() ? "human" : "ai") : null);
-            s.addProperty("autoPass", hc != null && hc.mayAutoPass());
+            s.addProperty("waitingFor", "running".equals(status) ? (pending != null || inputActive ? "human" : "ai") : null);
         }
+        s.addProperty("autoPass", autoPass);
+        s.add("prompt", inputActive ? promptDto(in, pc) : null);
+        s.add("decision", pend == null ? null : decisionDto(pend));
 
         final JsonArray log = new JsonArray();
         try {
@@ -799,34 +850,41 @@ public final class DuelSession {
         return a;
     }
 
-    private JsonObject promptLocked() {
-        final Input in = currentInput();
-        if (in == null || in instanceof InputLockUI) {
-            return null;
-        }
+    private static final class PromptCopy {
+        int id;
+        String message;
+        CardView card;
+        String okLabel;
+        String cancelLabel;
+        boolean okEnabled;
+        boolean cancelEnabled;
+        Selection selection;
+    }
+
+    private JsonObject promptDto(final Input in, final PromptCopy pc) {
         final JsonObject o = new JsonObject();
-        o.addProperty("id", "p" + promptId);
+        o.addProperty("id", "p" + pc.id);
         o.addProperty("input", in.getClass().getSimpleName());
         o.addProperty("kind", inputKind(in));
-        o.addProperty("message", promptMessage);
-        if (promptCard != null) {
-            o.add("card", cardRef(promptCard));
+        o.addProperty("message", pc.message);
+        if (pc.card != null) {
+            o.add("card", cardRef(pc.card));
         }
         final JsonObject b = new JsonObject();
-        if (okLabel != null) {
+        if (pc.okLabel != null) {
             final JsonObject x = new JsonObject();
-            x.addProperty("label", okLabel);
-            x.addProperty("enabled", okEnabled);
+            x.addProperty("label", pc.okLabel);
+            x.addProperty("enabled", pc.okEnabled);
             b.add("ok", x);
         }
-        if (cancelLabel != null) {
+        if (pc.cancelLabel != null) {
             final JsonObject x = new JsonObject();
-            x.addProperty("label", cancelLabel);
-            x.addProperty("enabled", cancelEnabled);
+            x.addProperty("label", pc.cancelLabel);
+            x.addProperty("enabled", pc.cancelEnabled);
             b.add("cancel", x);
         }
         o.add("buttons", b);
-        final Selection sel = selection;
+        final Selection sel = pc.selection;
         o.add("selectable", ids(sel.cards()));
         o.addProperty("min", sel.min());
         o.addProperty("max", sel.max());
@@ -991,9 +1049,10 @@ public final class DuelSession {
         }
         if (hasPending) {
             // O Forge está parado numa pergunta: registramos a concessão e encerramos o processo.
+            final JsonObject facts = facts();
             synchronized (lock) {
                 status = "over";
-                result = baseResult("conceded");
+                result = baseResult("conceded", facts);
                 result.addProperty("winner", "ai");
                 result.addProperty("reason", "concede");
                 bumpLocked();
@@ -1009,6 +1068,11 @@ public final class DuelSession {
     private JsonObject inputCommand(final String type, final JsonObject cmd) {
         final PlayerControllerHuman c;
         final Game g;
+        final boolean okEnabled;
+        final boolean cancelEnabled;
+        if (!humanInputActive()) {
+            return reject("not_your_turn", "Aguarde: o Forge não está esperando uma ação sua.");
+        }
         synchronized (lock) {
             if (!"running".equals(status)) {
                 return reject("not_running", "A partida não está em andamento.");
@@ -1016,10 +1080,8 @@ public final class DuelSession {
             if (pending != null) {
                 return reject("decision_pending", "Responda a pergunta pendente primeiro.");
             }
-            final Input in = currentInput();
-            if (in == null || in instanceof InputLockUI) {
-                return reject("not_your_turn", "Aguarde: o Forge não está esperando uma ação sua.");
-            }
+            okEnabled = this.okEnabled;
+            cancelEnabled = this.cancelEnabled;
             if (!("p" + promptId).equals(str(cmd, "promptId"))) {
                 return reject("stale", "O estado mudou desde o seu clique; confira e tente de novo.");
             }
