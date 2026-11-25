@@ -186,7 +186,9 @@ public class AttachAi extends SpellAbilityAi {
                     && (!peekSa.usesTargeting() || peekSa.getTargets().getTargetCards().contains(attachTarget))) {
                 if (peekSa.getApi() == ApiType.DealDamage || peekSa.getApi() == ApiType.DamageAll) {
                     int dmg = AbilityUtils.calculateAmount(peekSa.getHostCard(), peekSa.getParam("NumDmg"), peekSa);
-                    if (dmg < toughness + attachTarget.getNetToughness()) {
+                    final int left = attachTarget.getNetToughness() - attachTarget.getDamage();
+                    // Grimoire: only when the damage would kill the creature without the aura (Shock on a 3/3 does not)
+                    if (dmg >= left && dmg < toughness + left) {
                         canRespondToStack = true;
                     }
                 } else if (peekSa.getApi() == ApiType.Destroy || peekSa.getApi() == ApiType.DestroyAll) {
