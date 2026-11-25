@@ -136,6 +136,8 @@ public class ChangeZoneAi extends SpellAbilityAi {
             return true;
         } else if (aiLogic.equals("Pongify")) {
             return SpecialAiLogic.doPongifyLogic(ai, sa);
+        } else if (aiLogic.equals("TradeUp")) {
+            return tradeUpLogic(ai, sa);
         }
 
         return super.checkAiLogic(ai, sa, aiLogic);
@@ -1090,6 +1092,11 @@ public class ChangeZoneAi extends SpellAbilityAi {
             // if it's blink or bounce, try to save my about to die stuff
             final boolean blink = (destination.equals(ZoneType.Exile) && (subApi == ApiType.DelayedTrigger
                     || "DelayedBlink".equals(sa.getParam("AILogic")) || (subApi == ApiType.ChangeZone && subAffected.equals("Remembered"))));
+            // Grimoire: blinks that need several targets (Ghostly Flicker) never reached the logic below, which only
+            // runs for one target, so the AI never cast them. Choose the whole set here.
+            if (blink && sa.getMinTargets() > 1) {
+                return chooseMultiBlinkTargets(ai, sa, list, immediately, mandatory);
+            }
             if ((destination.equals(ZoneType.Hand) || blink) && sa.getMinTargets() <= 1) {
                 // save my about to die stuff
                 Card tobounce = canBouncePermanent(ai, sa, list);
@@ -1364,6 +1371,123 @@ public class ChangeZoneAi extends SpellAbilityAi {
      * @param list possible targets
      * @return target to bounce, null if no good targets
      */
+    /**
+     * Grimoire: targets for a blink of exactly N (>1) permanents I control (Ghostly Flicker). There has to be a reason
+     * (a threatened permanent, an enters trigger, an opposing aura on my creature); the remaining targets are filler that
+     * loses nothing in the round trip: tapped lands first (they come back untapped), then other lands, then the least
+     * valuable remaining permanent. Tokens never go (they stay in exile), nor permanents carrying my auras, equipment
+     * or +1/+1 counters, unless the spell is mandatory.
+     */
+    private static boolean chooseMultiBlinkTargets(final Player ai, final SpellAbility sa, final CardCollection list,
+                                                   final boolean immediately, final boolean mandatory) {
+        final Game game = ai.getGame();
+        final int need = sa.getMinTargets();
+        final CardCollection mine = CardLists.filter(list, c -> c.getController().equals(ai) && c.getOwner().equals(ai) && sa.canTarget(c));
+        final CardCollection keepable = CardLists.filter(mine, c -> !c.isToken() && !losesValueWhenBlinked(ai, c));
+        final List<Card> picks = new ArrayList<>();
+
+        final Card save = keepable.isEmpty() ? null : canBouncePermanent(ai, sa, keepable);
+        if (save != null) {
+            picks.add(save);
+        }
+        final boolean timing = save != null || immediately || sa.getParent() != null || sa.isTrigger()
+                || !game.getPhaseHandler().getPhase().isBefore(PhaseType.MAIN2);
+        if (timing) {
+            final CardCollection value = CardLists.filter(keepable, c -> !picks.contains(c)
+                    && (hasEnabledEtbTrigger(ai, c) || enchantedByOpponent(ai, c)));
+            while (picks.size() < need && !value.isEmpty()) {
+                final Card best = ComputerUtilCard.getBestAI(value);
+                picks.add(best);
+                value.remove(best);
+            }
+        }
+        if (picks.isEmpty() && !mandatory) {
+            return false;
+        }
+        final CardCollection rest = CardLists.filter(keepable, c -> !picks.contains(c));
+        final CardCollection tappedLands = CardLists.filter(rest, c -> c.isLand() && c.isTapped());
+        final CardCollection lands = CardLists.filter(rest, c -> c.isLand() && !c.isTapped());
+        final CardCollection others = CardLists.filter(rest, c -> !c.isLand());
+        for (CardCollection pool : List.of(tappedLands, lands, others)) {
+            while (picks.size() < need && !pool.isEmpty()) {
+                final Card worst = ComputerUtilCard.getWorstAI(pool);
+                picks.add(worst);
+                pool.remove(worst);
+            }
+        }
+        if (picks.size() < need && mandatory) {
+            for (Card c : list) {
+                if (picks.size() >= need) {
+                    break;
+                }
+                if (!picks.contains(c) && sa.canTarget(c)) {
+                    picks.add(c);
+                }
+            }
+        }
+        if (picks.size() < need) {
+            return false;
+        }
+        for (Card c : picks) {
+            sa.getTargets().add(c);
+        }
+        return true;
+    }
+
+    private static boolean losesValueWhenBlinked(final Player ai, final Card c) {
+        for (Card att : c.getAttachedCards()) {
+            if (att.getController().equals(ai)) {
+                return true; // my own aura or equipment would be lost or unattached
+            }
+        }
+        return c.getCounters(CounterEnumType.P1P1) > 0;
+    }
+
+    private static boolean enchantedByOpponent(final Player ai, final Card c) {
+        for (Card att : c.getAttachedCards()) {
+            if (att.isAura() && att.getController().isOpponentOf(ai)) {
+                return true; // blinking sheds Pacifism and the like
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Grimoire: "{cost}, Discard a creature card: return target creature card from your graveyard" (Tortured
+     * Existence). Only worth it when the best creature in the graveyard is clearly better than the worst one we would
+     * discard; equal swaps only burn mana.
+     */
+    private static boolean tradeUpLogic(final Player ai, final SpellAbility sa) {
+        String discardType = null;
+        if (sa.getPayCosts() != null) {
+            for (CostPart part : sa.getPayCosts().getCostParts()) {
+                if (part instanceof CostDiscard d) {
+                    discardType = d.getType();
+                }
+            }
+        }
+        if (discardType == null) {
+            return false;
+        }
+        final CardCollection hand = CardLists.getValidCards(ai.getCardsIn(ZoneType.Hand), discardType, ai, sa.getHostCard(), sa);
+        final CardCollection graveyard = CardLists.filter(CardLists.getTargetableCards(ai.getCardsIn(ZoneType.Graveyard), sa),
+                c -> c.getOwner().equals(ai));
+        if (hand.isEmpty() || graveyard.isEmpty()) {
+            return false;
+        }
+        final Card discard = ComputerUtilCard.getWorstAI(hand);
+        final Card back = ComputerUtilCard.getBestAI(graveyard);
+        if (discard == null || back == null) {
+            return false;
+        }
+        final int gain = value(back) - value(discard);
+        return gain >= 20;
+    }
+
+    private static int value(final Card c) {
+        return c.isCreature() ? ComputerUtilCard.evaluateCreature(c) : ComputerUtilCard.evaluatePermanentList(new CardCollection(c));
+    }
+
     private static Card canBouncePermanent(final Player ai, SpellAbility sa, CardCollectionView list) {
         Game game = ai.getGame();
         // filter out untargetables
