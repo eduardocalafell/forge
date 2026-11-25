@@ -163,6 +163,8 @@ public final class GrimoireDuel {
             prefs.setPref(ForgePreferences.FPref.YIELD_DECLINE_SCOPE_STACK_YIELD, "NEVER");
             prefs.setPref(ForgePreferences.FPref.YIELD_DECLINE_SCOPE_NO_ACTIONS, "NEVER");
             prefs.setPref(ForgePreferences.FPref.YIELD_SKIP_PHASE_DELAY, "true");
+            // a mesa web destaca as cartas jogáveis (prompt.actionable), como o brilho do Arena
+            prefs.setPref(ForgePreferences.FPref.UI_SHOW_ACTIONABLE_HIGHLIGHTS, "true");
             return null;
         });
         final GrimoireAiConfig aiConfig = new GrimoireAiConfig(job);
