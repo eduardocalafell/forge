@@ -200,7 +200,8 @@ final class DecisionRules {
             if (!el.isJsonPrimitive() || !el.getAsJsonPrimitive().isNumber()) {
                 return null;
             }
-            final int i = el.getAsInt();
+            final Integer i = exactInteger(el);
+            if (i == null) return null;
             if (i < 0 || i >= n || !seen.add(i)) {
                 return null;
             }
@@ -222,7 +223,9 @@ final class DecisionRules {
             if (!el.isJsonPrimitive() || !el.getAsJsonPrimitive().isNumber()) {
                 return null;
             }
-            out.add(el.getAsInt());
+            final Integer value = exactInteger(el);
+            if (value == null) return null;
+            out.add(value);
         }
         return out;
     }
@@ -231,6 +234,11 @@ final class DecisionRules {
         if (!a.has(key) || !a.get(key).isJsonPrimitive() || !a.get(key).getAsJsonPrimitive().isNumber()) {
             return null;
         }
-        return a.get(key).getAsInt();
+        return exactInteger(a.get(key));
+    }
+
+    private static Integer exactInteger(final JsonElement element) {
+        try { return element.getAsBigDecimal().intValueExact(); }
+        catch (ArithmeticException | NumberFormatException e) { return null; }
     }
 }

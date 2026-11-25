@@ -236,14 +236,18 @@ public final class WebGuiGame extends AbstractGuiGame {
         if (sideboardingMode) {
             throw s.unsupported("sideboard");
         }
-        if (sourceChoices == null || sourceChoices.isEmpty()) {
-            return new IGuiGame.OrderResult<>(destChoices == null ? new ArrayList<>() : new ArrayList<>(destChoices), false);
-        }
+        final List<T> choices = new ArrayList<>(sourceChoices == null ? List.of() : sourceChoices);
+        final int sourceCount = choices.size();
+        if (destChoices != null) choices.addAll(destChoices);
+        if (choices.isEmpty()) return new IGuiGame.OrderResult<>(new ArrayList<>(), false);
         final JsonObject p = new JsonObject();
         p.addProperty("title", Views.safe(title));
         p.addProperty("top", Views.safe(top));
-        p.add("options", options(sourceChoices, null));
-        final int n = sourceChoices.size();
+        p.add("options", options(choices, null));
+        final JsonArray initialOrder = new JsonArray();
+        for (int i = sourceCount; i < choices.size(); i++) initialOrder.add(i);
+        p.add("initialOrder", initialOrder);
+        final int n = choices.size();
         final int rMin = Math.max(0, remainingObjectsMin);
         final int rMax = remainingObjectsMax < 0 ? n : Math.min(n, remainingObjectsMax);
         p.addProperty("remainingMin", rMin);
@@ -251,13 +255,10 @@ public final class WebGuiGame extends AbstractGuiGame {
         if (referenceCard != null) {
             p.add("card", s.cardRef(referenceCard));
         }
-        if (destChoices != null && !destChoices.isEmpty()) {
-            throw s.unsupported("ordenação com destino pré-preenchido");
-        }
         final JsonObject a = s.ask("order", p);
         final List<T> out = new ArrayList<>();
         for (int i : idx(a, "indices")) {
-            out.add(sourceChoices.get(i));
+            out.add(choices.get(i));
         }
         return new IGuiGame.OrderResult<>(out, false);
     }

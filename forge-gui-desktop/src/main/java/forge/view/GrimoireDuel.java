@@ -49,6 +49,8 @@ import forge.util.BuildInfo;
 import forge.util.MyRandom;
 import forge.view.duel.DuelEventListener;
 import forge.view.duel.DuelSession;
+import forge.view.duel.DuelGuiDesktop;
+import forge.gui.GuiBase;
 import forge.view.duel.WebGuiGame;
 
 /**
@@ -249,6 +251,7 @@ public final class GrimoireDuel {
         }
         final PlayerControllerHuman hc = (PlayerControllerHuman) hp.getController();
         final WebGuiGame gui = new WebGuiGame(session);
+        GuiBase.setInterface(new DuelGuiDesktop(gui));
         gui.setHumanController(hc);
         hc.setGui(gui);
         gui.setGameView(game.getView());
