@@ -122,4 +122,22 @@ public class GrimoireDeckAuditTest extends FlatMcTestBase {
     @Test public void rescueVsDoomBladeH() { rescueVsRemoval(false, "Veteran Survivor", "Doom Blade", true); }
     @Test public void rescueVsShockNotLethalH() { rescueVsRemoval(false, "Hill Giant", "Shock", false); }
     @Test public void rescueVsShockNotLethalB() { rescueVsRemoval(true, "Hill Giant", "Shock", false); }
+
+    // ------------------------------------------------------------------ Sheltered by Ghosts ({1}{W}, aura que exila permanente do oponente)
+
+    private String sheltered(final boolean bounded, final String mine, final String theirs, final PhaseType phase) {
+        mode(bounded);
+        plains(2);
+        bf(mine, true);
+        bf(theirs, false);
+        put("Sheltered by Ghosts", ai, ZoneType.Hand);
+        at(phase, ai);
+        return decide("sheltered-" + mine.replace(' ', '-') + "-vs-" + theirs.replace(' ', '-') + "-" + phase, bounded, "Sheltered by Ghosts");
+    }
+
+    @Test public void shelteredRaiderMain1H() { sheltered(false, "Veteran Survivor", "Keldon Raider", PhaseType.MAIN1); }
+    @Test public void shelteredRaiderMain1B() { sheltered(true, "Veteran Survivor", "Keldon Raider", PhaseType.MAIN1); }
+    @Test public void shelteredGiantMain2H() { sheltered(false, "Skyward Spider", "Hill Giant", PhaseType.MAIN2); }
+    @Test public void shelteredGiantMain2B() { sheltered(true, "Skyward Spider", "Hill Giant", PhaseType.MAIN2); }
+    @Test public void shelteredScavengerMain1H() { sheltered(false, "Optimistic Scavenger", "Goblin Guide", PhaseType.MAIN1); }
 }
