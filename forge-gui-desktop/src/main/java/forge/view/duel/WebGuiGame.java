@@ -347,6 +347,10 @@ public final class WebGuiGame extends AbstractGuiGame {
         if (abilities == null || abilities.isEmpty()) {
             return null;
         }
+        // mesmo comportamento da interface desktop para cliques sem menu: uma única opção é usada direto
+        if (abilities.size() == 1 && triggerEvent == null) {
+            return abilities.get(0);
+        }
         final JsonObject p = new JsonObject();
         p.addProperty("title", "Escolha o que fazer");
         if (hostCard != null) {

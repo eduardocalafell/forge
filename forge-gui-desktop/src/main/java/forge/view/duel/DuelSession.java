@@ -381,7 +381,15 @@ public final class DuelSession {
                 return false;
             }
             final boolean mine = humanView != null && turn != null && turn.getId() == humanView.getId();
-            return !(mine ? stopsYou : stopsOpp).contains(phase);
+            if (!(mine ? stopsYou : stopsOpp).contains(phase)) {
+                return true;
+            }
+            // paradas de combate só valem quando há combate de fato
+            if (phase == PhaseType.COMBAT_DECLARE_ATTACKERS || phase == PhaseType.COMBAT_DECLARE_BLOCKERS) {
+                final CombatView cv = game == null ? null : game.getView().getCombat();
+                return cv == null || cv.getNumAttackers() == 0;
+            }
+            return false;
         }
     }
 
