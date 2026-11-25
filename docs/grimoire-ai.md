@@ -1,4 +1,4 @@
-# Grimoire AI v3
+# Grimoire AI v4
 
 Both headless adapters (`GrimoireSim` and `GrimoireDuel`) use `GrimoireAiConfig` after `Match.createGame()`. They do not go through `HostedMatch`, which is why the desktop preference never enabled Flat Monte Carlo in the old adapters.
 
@@ -11,3 +11,12 @@ Validation/session metadata includes the full AI version and search configuratio
 Strands v2 skips its own resolving stack entry when evaluating the pending threat. Combat evaluation compares the same remaining damage steps with and without each color: trample, first/double strike, marked damage, multiblocking, deathtouch, infect/toxic, counter eligibility, indestructibility and lifelink. Creatures are counted once only when the counterfactual actually changes predicted survival. Preventing one's own lethal damage is penalized.
 
 This is a public-state heuristic, not a replacement for Forge's rules. Optional combat assignments, regeneration choices, future tricks and triggered abilities, and complex replacement/counter effects are not an exhaustive rules simulation. The engine still resolves the real game. The regression suite covers the seven defects from the db53339 audit plus existing decisions and configuration/hidden-information controls. The site repository contains the paired calibration manifests and runner; a small calibration sample establishes integration/cost, not competitive playing strength.
+
+## v4: card audit (Ghostly Flicker, Tortured Existence)
+
+Both cards carried `AI:RemoveDeck:All`, which in this fork also removes a card from the heuristic play list (bounded search only saw it as a discovered candidate). Neither card was ever played. v4 removes the flag and fixes the logic:
+
+- **Ghostly Flicker** (`ChangeZoneAi.chooseMultiBlinkTargets`, any blink with two or more targets): first saves an own permanent threatened by the stack; when timing allows, adds enabled ETB triggers and permanents enchanted by an opponent's aura. Remaining targets: tapped lands, untapped lands, then the worst nonland. Never tokens, and never permanents that would lose their own auras, equipment or +1/+1 counters. Without a save or value it does not cast.
+- **Tortured Existence** (`AILogic$ TradeUp`, `AIPreference:DiscardCost$Creature`): discards the worst creature in hand and returns the creature the targeting really picks (`chooseCreature`); activates only when the gain is at least 20 evaluation points (no bad trades or churn).
+
+`GrimoireCardAuditTest` covers 13 scenarios in both search modes. Known limit: `evaluateCreature` does not value ETB effects, and the harness checks the chosen targets rather than resolved triggers. Inside Out was not audited.

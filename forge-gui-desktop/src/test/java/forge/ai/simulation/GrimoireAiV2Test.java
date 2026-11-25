@@ -98,7 +98,7 @@ public class GrimoireAiV2Test extends FlatMcTestBase {
         assertEquals(limits.turnBudgetNanos, TimeUnit.MILLISECONDS.toNanos(1400));
         assertEquals(limits.maxCandidates, 4);
         assertEquals(limits.opponentLookaheadPercent, 0);
-        assertEquals(config.version(), "grimoire-ai/3; prismatic-strands/v2; search/bounded/1");
+        assertEquals(config.version(), "grimoire-ai/4; prismatic-strands/v2; search/bounded/1");
     }
 
     @Test public void quickModeDisablesSearchAndDoesNotMutateOtherGames() {

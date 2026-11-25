@@ -9,7 +9,7 @@ import forge.game.player.Player;
 
 /** One immutable configuration per JVM/job, shared by simulations and web duels. */
 public final class GrimoireAiConfig {
-    public static final String VERSION = "grimoire-ai/3";
+    public static final String VERSION = "grimoire-ai/4";
     private final String mode;
     private final String strands;
 
